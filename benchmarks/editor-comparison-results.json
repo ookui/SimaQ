@@ -1,0 +1,27 @@
+{
+  "runtime": "v24.14.1",
+  "scope": "source model and rendering only; no DOM, IME, undo or cursor execution",
+  "sample": {
+    "utf16": 228,
+    "bytes": 336,
+    "crlf": 21
+  },
+  "baseline": {
+    "name": "原生全文 textarea + markdown-it 独立预览",
+    "noOpExact": true,
+    "targetedEditExact": true,
+    "tableHTML": true,
+    "yamlRenderedAsHeading": true
+  },
+  "blockEditor": {
+    "name": "源文权威块编辑 + SimaRender + SimaTables",
+    "noOpExact": true,
+    "blockCount": 6,
+    "yamlBlock": true,
+    "offsetSlicesExact": true,
+    "cellEditOnly": true,
+    "crlfRetained": true,
+    "tableHTML": true,
+    "escapedPipeColumns": 3
+  }
+}

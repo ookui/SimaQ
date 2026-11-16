@@ -1,0 +1,38 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>SimaQ 使用说明</title><style>
+:root{color-scheme:light dark}body{font:16px/1.8 -apple-system,BlinkMacSystemFont,sans-serif;max-width:720px;padding:40px 28px;margin:auto}h1{letter-spacing:-.04em;font-size:40px}h2{font-size:21px;margin-top:34px}kbd,code{font:14px ui-monospace,monospace;background:#80978924;padding:2px 6px;border-radius:4px}li{margin:7px 0}table{border-collapse:collapse;width:100%}td,th{border-bottom:1px solid #80978955;text-align:left;padding:.55em .35em}</style>
+<h1>SimaQ 使用说明</h1>
+<p>首次打开请选择“示例资料库”，或按 <kbd>⌘O</kbd> 选择已有的本地文件夹。示例库会复制到可编辑目录，可放心试写。</p>
+<h2>用一份公司笔记开始</h2><ol>
+<li>打开「公司 / 富瀚微.md」。表格中点选单元格，用 Tab 前进。复制三行两列的电子表格数据，粘贴到第一个目标单元格，用 <kbd>⌘Z</kbd> 撤销。</li>
+<li>按 <kbd>⌘⇧F</kbd> 输入 <code>physical ai</code>。展开「归档 / 2025 / 富瀚微.md」，选择第二处命中。精确短语保留查询中的分隔符。</li>
+<li>在公司笔记中按 <kbd>⌘K</kbd>，输入“视觉”，选择 HTML 报告。打开报告后，点其中的“阅读访谈纪要第 2 页”。用工具栏的后退按钮返回。</li>
+<li>在「设置」切换浅色或深色外观。将表格字号调小，留意正文和左栏字号。点“元数据”可展开或折叠 YAML。</li>
+</ol>
+<h2>常用操作</h2><table><tr><th>操作</th><th>默认快捷键</th></tr><tr><td>打开目录 / 新建笔记 / 保存</td><td>⌘O / ⌘N / ⌘S</td></tr><tr><td>当前文档 / 全库搜索</td><td>⌘F / ⌘⇧F</td></tr><tr><td>插入链接 / 源码模式</td><td>⌘K / ⌘/</td></tr><tr><td>命令面板 / 设置</td><td>⌘⇧P / ⌘,</td></tr><tr><td>关闭 / 重开标签</td><td>⌘W / ⌘⇧T</td></tr></table>
+<p>菜单默认采用 macOS 首选语言。在「SimaQ → Settings… → General → Menu Language」（⌘,）可选择跟随系统、English、简体中文或繁體中文。选择立即生效，并在下次启动时保留。</p>
+<h2>日记目录</h2>
+<p>在「文件 → 日记目录…」选择当前工作区的根目录或子目录。设置按工作区保存。侧栏「今天」会打开所选目录的日历，列出该目录及其子目录中的日记。首次编辑某天的新日记时，文件会保存到所选目录。更改设置不会搬动旧文件。未配置的资料库继续自动识别 <code>LifeOS/journals</code>。</p>
+<h2>阅读与引用</h2>
+<p>右侧大纲随正文滚动，高亮阅读区域中线所在的章节。点击标题可跳转，按 ⌘⇧O 可收起或展开大纲。</p>
+<p>点击标题左侧的箭头可折叠整节，直到下一个同级或更高级标题。嵌套章节分别记忆，搜索和大纲跳转会展开目标章节。折叠状态保存在工作区会话中，Markdown 原文保持完整。</p>
+<p>Markdown 页底的「引用此页」按来源笔记列出链接所在段落。点击段落，跳转到来源行。新增或修改笔记后，引用随索引更新。第一次打开旧资料库时会重建索引，期间结果会陆续出现。</p>
+<h2>搜索、主题与 Markdown</h2>
+<p>搜索侧栏按文件分组。右侧数字统计正文命中次数，包含标题。同一行出现两次计两处。仅文件名或路径匹配时计为 0，仍可点开文件。每组先显示五处，点击组标题折叠，点击下方按钮展开更多。</p>
+<p>在「文件 → 工作区排除目录」添加或移除子目录。每个工作区单独保存，默认隐藏根目录下的 <code>_Meta</code>。取消排除后会重新建立该目录的搜索索引。</p>
+<p>在「主题 → Tana Light」启用 Typora 的 Tana 配色。字号、字体、表格和 YAML 样式在「主题 → 主题设置」调整。自定义 CSS 放在 <code>~/Library/Application Support/SimaQ/Themes/</code>，可在设置中打开此目录。</p>
+<p>LaTeX 行内公式写作 <code>$E=mc^2$</code> 或 <code>\(E=mc^2\)</code>。独立公式使用 <code>$$…$$</code> 或 <code>\[…\]</code>，定界符可另起一行。点入公式所在段落编辑源码，离开段落后显示排版。格式和段落菜单分别提供行内和独立公式。</p>
+<p>在「文件 → Markdown 图片目录」选择基准目录，填写 <code>images</code> 或 <code>${filename}.assets</code> 并保存。默认基准为笔记所在目录。新粘贴的图片写入所选目录。已有图片链接优先按原路径读取，找不到时从图片目录补找，例如 <code>分析.md</code> 中的 <code>![图](趋势.png)</code> 可读取 <code>images/趋势.png</code>。</p>
+<h2>资料库与偏好设置</h2><p>Markdown、HTML、PDF 和附件位于你打开的原目录。主题、模板、索引、标签页状态及恢复数据位于 <code>~/Library/Application Support/SimaQ</code>。设置中可以打开主题和模板目录。内置两份普通 Markdown 模板，可直接编辑。</p>
+<p>PDF 使用系统文本层检索，扫描 PDF 可阅读。HTML 使用作者的样式。打开含交互图表的本地报告后，可在文档菜单授予脚本信任，或撤销信任。修改报告文件后，原授权失效。</p>
+<h2>发布到微信公众号</h2><p>打开 Markdown 页面，在“文件”菜单或页面右上角“…”选择“发布到微信公众号…”，也可以在命令面板搜索该命令。首次使用时在微信公众平台扫码并选择账号。窗口会打开新文章，填入标题和正文，供你设置封面、摘要和原创声明，并自行保存或发表。非微信托管的图片在原位置标记，需在后台补入。两个复制按钮会提示复制结果，并尝试填入对应的空白栏。如果该栏已有内容，可以点击要插入的位置后按 ⌘V 粘贴。</p>
+<h2>安装与构建</h2><p>解压后双击 SimaQ.app，或拖入“应用程序”。开发环境需要 Xcode Command Line Tools（Swift 编译器和 macOS SDK）。源码在解压目录的 Source 中，在该目录执行 <code>./scripts/build.sh</code>。包含预构建编辑资源的源码包可离线构建。构建产物在 build/SimaQ.app。此包使用本机临时签名，未经过 Apple 公证。</p>
+
+<h2>0.1.0 验收记录 · 2026 年 11 月 13 日</h2>
+<table><tr><th>项目</th><th>本机结果</th></tr>
+<tr><td>应用包</td><td>Apple Silicon arm64 构建、临时签名与校验通过，依赖随包提供。</td></tr>
+<tr><td>文件与恢复</td><td>原生测试通过。覆盖原字节、混合换行、冲突与草稿、文件移动、外部改名识别和链接修复。外部改名由文件系统测试程序执行。</td></tr>
+<tr><td>Markdown 与表格</td><td>渲染断言、9 项表格测试和 7 项设置测试通过。已检查带中文和空格路径的本地附件可以嵌入导出 HTML。</td></tr>
+<tr><td>搜索性能</td><td>10,000 份 Markdown，约 208 MB。首次建索引 26.56 秒。含服务防抖的五项普通暖查询 p95 为 86–129 毫秒。正则及两字短查询为 1.64–1.66 秒。左栏绘制和建库期间输入延迟单列为未实测。</td></tr>
+<tr><td>窗口交互</td><td>独立 Reader 测试程序已编译，受限环境中的 WebKit 服务拒绝连接，在 HTML 加载阶段退出。端到端操作、重启恢复、系统中文候选窗、Typora 互开与打印均未取得通过记录。</td></tr></table>
+<p>在源码目录执行 <code>./scripts/test-core.sh</code> 和 <code>node --test Web/editor/*.test.cjs</code> 复测底层功能。在有桌面会话的 Mac 上执行 <code>./scripts/build.sh</code> 和 <code>./scripts/test-app.sh --all</code> 运行窗口编辑、重启及性能验收。系统输入法人工步骤见 <code>Source/tests/ime-readme.md</code>。</p>

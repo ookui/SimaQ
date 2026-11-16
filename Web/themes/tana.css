@@ -1,0 +1,414 @@
+/* Tana Light · the reference outliner palette */
+@font-face {
+    font-family: "Tana PingFang";
+    src: local("PingFangSC-Regular");
+    font-style: normal;
+    font-weight: 400;
+    unicode-range: U+2E80-2FFF, U+3000-303F, U+3100-312F, U+31A0-31EF,
+                   U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF,
+                   U+FE10-FE1F, U+FE30-FE4F, U+FF01-FF0F, U+FF1A-FF20,
+                   U+FF3B-FF40, U+FF5B-FF60, U+20000-323AF;
+}
+
+@font-face {
+    font-family: "Tana PingFang";
+    src: local("PingFangSC-Semibold");
+    font-style: normal;
+    font-weight: 600;
+    unicode-range: U+2E80-2FFF, U+3000-303F, U+3100-312F, U+31A0-31EF,
+                   U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF,
+                   U+FE10-FE1F, U+FE30-FE4F, U+FF01-FF0F, U+FF1A-FF20,
+                   U+FF3B-FF40, U+FF5B-FF60, U+20000-323AF;
+}
+
+:root {
+    color-scheme: light;
+    /* Display P3 samples from the reference. Each tag supplies ink and a pale fill.
+       Person and todo share a pair. Domain and concept supply the neutral ramp. */
+    --tana-paper: #f4f4f4;
+    --tana-surface: #eeeeee;
+    --tana-line: #d2d2d2;
+    --tana-ink: color(display-p3 0.32549 0.329412 0.329412);
+    --tana-muted: #828282;
+    --tana-org: color(display-p3 0.160784 0.380392 0.964706);
+    --tana-org-bg: color(display-p3 0.898039 0.933333 0.996078);
+    --tana-person: color(display-p3 0.4 0.470588 0.133333);
+    --tana-person-bg: color(display-p3 0.929412 0.941176 0.843137);
+    --tana-event: color(display-p3 0.490196 0.329412 0.847059);
+    --tana-event-bg: color(display-p3 0.937255 0.921569 0.968627);
+    --tana-investlog: color(display-p3 0.223529 0.509804 0.345098);
+    --tana-investlog-bg: color(display-p3 0.866667 0.952941 0.92549);
+    --tana-insight: color(display-p3 0.623529 0.270588 0.737255);
+    --tana-insight-bg: color(display-p3 0.952941 0.92549 0.960784);
+    --tana-project: color(display-p3 0.843137 0.180392 0.470588);
+    --tana-project-bg: color(display-p3 0.972549 0.917647 0.94902);
+    --tana-mom: color(display-p3 0.643137 0.364706 0.12549);
+    --tana-mom-bg: color(display-p3 0.988235 0.92549 0.827451);
+    --tana-books: color(display-p3 0.192157 0.447059 0.815686);
+    --tana-books-bg: color(display-p3 0.909804 0.933333 0.964706);
+    --tana-accent: var(--tana-org);
+    --tana-link: var(--tana-org);
+    --tana-mark: var(--tana-person-bg);
+    --tana-hit: var(--tana-mom-bg);
+    --tana-hit-ink: var(--tana-ink);
+    --tana-current: var(--tana-event);
+    --tana-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+               "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+
+    --bg-color: var(--tana-paper);
+    --text-color: var(--tana-ink);
+    --md-char-color: var(--tana-muted);
+    --meta-content-color: var(--tana-muted);
+    --heading-char-color: var(--tana-accent);
+    --primary-color: var(--tana-accent);
+    --primary-btn-border-color: var(--tana-org);
+    --primary-btn-text-color: var(--tana-paper);
+    --side-bar-bg-color: var(--tana-surface);
+    --active-file-bg-color: var(--tana-org-bg);
+    --active-file-text-color: var(--tana-org);
+    --active-file-border-color: var(--tana-accent);
+    --control-text-color: var(--tana-muted);
+    --control-text-hover-color: var(--tana-ink);
+    --item-hover-bg-color: var(--tana-surface);
+    --item-hover-text-color: var(--tana-ink);
+    --window-border: 1px solid var(--tana-line);
+    --table-border-color: var(--tana-line);
+    --select-text-bg-color: var(--tana-org-bg);
+    --select-text-font-color: var(--tana-ink);
+    --search-select-bg-color: var(--tana-current);
+    --search-select-text-color: var(--tana-paper);
+    --monospace: "SFMono-Regular", Consolas, "Liberation Mono",
+                 "PingFang SC", "Microsoft YaHei", monospace;
+}
+
+html { font-size: 16px; }
+html, body { background-color: var(--bg-color); color: var(--text-color); }
+body { font-family: var(--tana-sans); }
+#outline-content .outline-active > .outline-item { color: var(--tana-accent); }
+
+#write {
+    font-family: "Tana PingFang", var(--tana-sans);
+    box-sizing: border-box;
+    max-width: 56rem;
+    margin: 0 auto;
+    padding: 1.35rem clamp(1.15rem, 4vw, 3rem) 2rem;
+    font-size: 1rem;
+    line-height: 1.75;
+    caret-color: var(--tana-accent);
+}
+
+#write p { margin: .72em 0; }
+#write h1, #write h2, #write h3, #write h4, #write h5, #write h6 {
+    font-family: var(--tana-sans);
+    margin: 1.65em 0 .48em;
+    line-height: 1.38;
+    font-weight: 650;
+    color: var(--tana-ink);
+}
+#write h1 {
+    font-weight: 700;
+    font-size: 2.15rem;
+    line-height: 1.22;
+    letter-spacing: -.025em;
+}
+#write h2 { font-size: 1.55rem; }
+#write h3 { font-size: 1.19rem; }
+#write h4 { font-size: 1.06rem; }
+#write h5, #write h6 { font-size: 1rem; color: var(--tana-muted); }
+#write h6 { font-weight: 500; }
+#write > :first-child { margin-top: 0; }
+#write strong { font-weight: 700; }
+#write hr { margin: 2rem 0; border: 0; border-top: 1px solid var(--tana-line); }
+
+/* Blue and an underline identify links even inside a paragraph of dark text. */
+#write a[href], #write .md-link .md-content {
+    color: var(--tana-link);
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: .17em;
+}
+#write a[href]:hover {
+    color: var(--tana-books);
+    background-color: var(--tana-books-bg);
+    text-decoration-thickness: 2px;
+}
+#write a[href]:focus-visible {
+    outline: 2px solid var(--tana-link);
+    outline-offset: 2px;
+}
+#write mark {
+    background-color: var(--tana-mark);
+    color: var(--tana-person);
+    border-radius: .24em;
+}
+#write blockquote {
+    margin: 1.15rem 0;
+    padding: .1rem 1rem;
+    border-left: 3px solid var(--tana-investlog);
+    background: var(--tana-investlog-bg);
+    color: var(--tana-ink);
+}
+#write ul, #write ol { padding-left: 1.65rem; }
+#write li > p { margin: .3em 0; }
+/* Tana's node guides distinguish nested items without adding extra bullets. */
+#write li > ul, #write li > ol {
+    margin: .15em 0 .25em;
+    border-inline-start: 1px solid var(--tana-line);
+}
+#write li::marker { color: var(--tana-muted); }
+#write .md-task-list-item > input { margin-inline-start: -1.35em; }
+#write input[type="checkbox"] { accent-color: var(--tana-accent); }
+
+#write table {
+    margin: 1.2rem 0;
+    border-collapse: collapse;
+    font-size: .8125rem;
+    line-height: 1.55;
+    font-variant-numeric: tabular-nums;
+}
+#write th, #write td {
+    padding: .48em .8em;
+    border: 1px solid var(--tana-line);
+}
+#write th { background: var(--tana-surface); font-weight: 650; }
+#write tbody tr:nth-child(even) { background: var(--tana-surface); }
+
+#write code, #write pre, #typora-source { font-family: var(--monospace); }
+#write :not(pre) > code {
+    padding: .08em .3em;
+    border-radius: .25em;
+    background: var(--tana-mom-bg);
+    color: var(--tana-mom);
+    font-size: .91em;
+}
+#write .md-fences, #write .md-meta-block {
+    margin: 1.1rem 0;
+    padding: .8rem 1rem;
+    border: 1px solid var(--tana-line);
+    border-radius: .5rem;
+    background-color: var(--tana-surface);
+    font-size: .91rem;
+    line-height: 1.6;
+}
+#write .md-meta-block, #write .md-lang { color: var(--tana-muted); }
+#write .cm-s-inner .cm-comment { color: var(--tana-muted); }
+#write .cm-s-inner .cm-keyword { color: var(--tana-event); }
+#write .cm-s-inner .cm-string { color: var(--tana-investlog); }
+#write .cm-s-inner .cm-number { color: var(--tana-mom); }
+#write .cm-s-inner .cm-def { color: var(--tana-org); }
+
+/* The title fades into the page; list markers use the investlog pair. */
+@media screen {
+    #write > .sima-block[data-document-title] > h1 {
+        position: relative;
+        isolation: isolate;
+        padding: .42em 0 .48em;
+    }
+    #write > .sima-block[data-document-title] > h1::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        z-index: -1;
+        pointer-events: none;
+        background-image: radial-gradient(
+            ellipse farthest-corner at center,
+            var(--tana-mom-bg) 10%,
+            color-mix(in display-p3, var(--tana-mom-bg) 78%, transparent) 50%,
+            color-mix(in display-p3, var(--tana-mom-bg) 24%, transparent) 79%,
+            transparent 100%
+        );
+        /* Soften the boundary without adding a separate surface or outline. */
+        mask-image:
+            linear-gradient(to right, transparent, var(--tana-ink) 10%, var(--tana-ink) 90%, transparent),
+            linear-gradient(to bottom, transparent, var(--tana-ink) 16%, var(--tana-ink) 84%, transparent);
+        mask-composite: intersect;
+    }
+    #write pre.md-meta-block {
+        margin-block-start: 0;
+        background-color: var(--tana-insight-bg);
+        border-color: var(--tana-line);
+        color: var(--tana-muted);
+        font-style: italic;
+    }
+    /* Keep a small pointer target so the front matter can reopen. */
+    #write pre.md-meta-block:not(:hover) {
+        box-sizing: border-box;
+        height: .75rem;
+        min-height: 0;
+        margin-block-end: .45rem;
+        padding-block: 0;
+        overflow: hidden;
+        border-color: transparent;
+        background: linear-gradient(var(--tana-line), var(--tana-line)) center / 2rem 2px no-repeat;
+        color: transparent;
+        -webkit-text-fill-color: transparent;
+        caret-color: transparent;
+    }
+    #write ul > li:not(.md-task-list-item) {
+        position: relative;
+        list-style-type: none;
+    }
+    #write ul > li:not(.md-task-list-item)::before {
+        content: "";
+        position: absolute;
+        inset-inline-start: -1.15em;
+        top: .54em;
+        width: .64em;
+        height: .64em;
+        border-radius: 50%;
+        background: radial-gradient(circle, var(--tana-investlog) 0 31%, var(--tana-investlog-bg) 34% 100%);
+    }
+    #write li ul > li:not(.md-task-list-item)::before {
+        top: .73em;
+        width: .29em;
+        height: .29em;
+        background: var(--tana-muted);
+    }
+    /* Render same-page links as the green relationship labels. */
+    #write a[href^="#"]:where(:not([href="#"], .md-search-hit, .md-search-select)),
+    #write .md-link[data-href^="#"]:where(:not([data-href="#"])) .md-content:where(:not(.md-search-hit, .md-search-select)) {
+        padding-inline: .22em;
+        border-radius: .23em;
+        background-color: var(--tana-investlog-bg);
+        color: var(--tana-investlog);
+    }
+    #write a[href^="#"]:where(:not([href="#"], .md-search-hit, .md-search-select)):hover,
+    #write .md-link[data-href^="#"]:where(:not([data-href="#"])) .md-content:where(:not(.md-search-hit, .md-search-select)):hover {
+        background-color: var(--tana-investlog-bg);
+        color: var(--tana-investlog);
+    }
+}
+
+/* Typora searches document ranges, editor spans and file-list snippets. */
+.md-search-hit, .cm-search-hit, .ty-file-search-match-text,
+#write .md-search-hit, #write .cm-s-inner .cm-search-hit {
+    background-color: var(--tana-hit);
+    color: var(--tana-hit-ink);
+}
+.ty-search-item-line.active .ty-file-search-match-text,
+.md-search-hit.md-search-select, .md-search-select,
+.cm-search-hit.CodeMirror-selectedtext, .cm-search-hit.CodeMirror-selected,
+#write .md-search-select, #write .md-search-hit.md-search-select,
+#write .cm-s-inner .cm-search-hit.CodeMirror-selectedtext,
+#write .cm-s-inner .cm-search-hit.CodeMirror-selected {
+    background-color: var(--search-select-bg-color);
+    color: var(--search-select-text-color);
+    border-radius: .15em;
+    box-shadow: 0 0 0 1px var(--search-select-bg-color);
+}
+#write .md-search-hit :not(.md-search-select),
+#write .md-search-select :not(.md-search-select) {
+    /* Keep nested links and inline code legible against the match color. */
+    color: inherit !important;
+    background-color: transparent !important;
+}
+::highlight(search-hit) {
+    background-color: var(--tana-hit);
+    color: var(--tana-hit-ink);
+}
+::highlight(search-select) {
+    background-color: var(--search-select-bg-color);
+    color: var(--search-select-text-color);
+    text-shadow: none;
+}
+
+@media print {
+    :root { --bg-color: var(--tana-paper); --text-color: var(--tana-ink); }
+    #write { max-width: none; padding: 0; }
+    #write h1, #write h2, #write h3 { break-after: avoid; }
+    #write tr { break-inside: avoid; }
+}
+
+
+/* Sima Qian adaptation; original remains unchanged in originals/. */
+:root {
+ --bg:var(--tana-paper); --surface:var(--tana-surface); --sidebar-bg:var(--side-bar-bg-color); --text:var(--tana-ink); --muted:var(--tana-muted); --border:var(--tana-line);
+ --accent:var(--tana-accent); --link:var(--tana-link); --selection:var(--select-text-bg-color); --focus:var(--tana-accent);
+ --search-hit:var(--tana-hit); --search-hit-text:var(--tana-hit-ink); --search-current:var(--tana-current); --search-current-text:var(--tana-paper); --search-row:var(--tana-org-bg); --count-color:var(--tana-accent);
+ --body-font:"Tana PingFang",var(--tana-sans); --content-width:56rem; --table-header-background:var(--tana-books-bg);
+ --h1-font:var(--tana-sans); --h2-font:var(--tana-sans); --h3-font:var(--tana-sans); --h4-font:var(--tana-sans); --h5-font:var(--tana-sans); --h6-font:var(--tana-sans);
+ --h1-color:var(--tana-ink); --h2-color:var(--tana-ink); --h3-color:var(--tana-ink); --h4-color:var(--tana-ink);
+ --yaml-key:var(--tana-insight); --yaml-value:var(--tana-ink); --yaml-comment:var(--tana-muted);
+}
+/*  The rendered document is the only themed reading surface. */
+body{background:var(--bg);color:var(--text)}
+#write,.sima-document{font-family:var(--body-font);font-size:var(--font-size);color:var(--body-color);font-weight:var(--body-weight);line-height:var(--line-height);max-width:var(--content-width);box-sizing:border-box;margin-inline:auto;caret-color:var(--accent)}
+#write p{margin-block:var(--paragraph-before) var(--paragraph-after)}
+#write h1{font-family:var(--h1-font);font-size:var(--h1-size);font-weight:var(--h1-weight);color:var(--h1-color);margin-block:var(--h1-before) var(--h1-after)}
+#write h2{font-family:var(--h2-font);font-size:var(--h2-size);font-weight:var(--h2-weight);color:var(--h2-color);margin-block:var(--h2-before) var(--h2-after)}
+#write h3{font-family:var(--h3-font);font-size:var(--h3-size);font-weight:var(--h3-weight);color:var(--h3-color);margin-block:var(--h3-before) var(--h3-after)}
+#write h4{font-family:var(--h4-font);font-size:var(--h4-size);font-weight:var(--h4-weight);color:var(--h4-color);margin-block:var(--h4-before) var(--h4-after)}
+#write h5{font-family:var(--h5-font);font-size:var(--h5-size);font-weight:var(--h5-weight);color:var(--h5-color);margin-block:var(--h5-before) var(--h5-after)}
+#write h6{font-family:var(--h6-font);font-size:var(--h6-size);font-weight:var(--h6-weight);color:var(--h6-color);margin-block:var(--h6-before) var(--h6-after)}
+#write table{font-family:var(--table-font);font-size:var(--table-font-size);color:var(--table-color);background:var(--table-background);border-collapse:collapse;font-variant-numeric:tabular-nums}
+#write th,#write td{padding:var(--table-padding);border:1px solid var(--table-border);min-width:5em;overflow-wrap:normal;word-break:normal}
+#write th{font-family:var(--table-header-font);font-size:var(--table-header-size);font-weight:var(--table-header-weight);color:var(--table-header-color);background:var(--table-header-background)}
+#write a[href]{color:var(--link);text-underline-offset:.17em}
+#write .yaml-key,#write .md-meta-key{color:var(--yaml-key)}
+#write .yaml-value,#write .md-meta-value{color:var(--yaml-value)}
+#write .yaml-comment,#write .md-meta-comment{color:var(--yaml-comment)}
+.sidebar,#sidebar{font-family:var(--sidebar-font);font-size:var(--sidebar-font-size);background:var(--sidebar-bg)}
+.tabs,.tabbar,#tabs{font-size:var(--tab-font-size)}
+.search-hit,.md-search-hit,.cm-search-hit,.ty-file-search-match-text,#write .md-search-hit,#write .cm-s-inner .cm-search-hit{background:var(--search-hit);color:var(--search-hit-text)}
+.search-current,.md-search-select,.cm-search-current,.search-hit.current,#write .md-search-select,#write .md-search-hit.md-search-select,#write .cm-s-inner .cm-search-hit.CodeMirror-selectedtext,#write .cm-s-inner .cm-search-hit.CodeMirror-selected{background:var(--search-current);color:var(--search-current-text)}
+.search-result.selected,.search-result[aria-selected="true"],.ty-search-item-line.active{background:var(--search-row)}
+.search-count,.hit-count{color:var(--count-color)}
+::selection{background:var(--selection)}
+::highlight(search-hit){background:var(--search-hit);color:var(--search-hit-text)}
+::highlight(search-select){background:var(--search-current);color:var(--search-current-text)}
+/* YAML collapse belongs to document state. Never use hover to conceal raw YAML. */
+#write pre.md-meta-block:not(:hover),#write pre.md-meta-block:hover{height:auto;min-height:0;overflow:visible;color:var(--yaml-value);-webkit-text-fill-color:currentColor;caret-color:var(--accent);padding:.8rem 1rem;margin-block:0 .8rem;background:var(--tana-insight-bg);border:1px solid var(--border)}
+.md-meta-block[hidden],.yaml-content[hidden]{display:none!important}
+
+/* Application chrome uses the same pairs as the reading surface. */
+:root {
+    --shell-hover: var(--tana-books-bg);
+    --shell-selected: var(--tana-org-bg);
+    --tana-shadow: color-mix(in display-p3, var(--tana-ink) 18%, transparent);
+    --tana-scrim: color-mix(in display-p3, var(--tana-ink) 28%, transparent);
+}
+.tree-row .kind-html, .group-head .kind-html { color: var(--tana-mom); }
+.tree-row .kind-pdf, .group-head .kind-pdf { color: var(--tana-project); }
+.side-switch button.active {
+    background: var(--bg) !important;
+}
+.tab[aria-selected='true'] { background: var(--tana-books-bg) !important; }
+#documentOutline { background: var(--surface); }
+#documentOutline .outline-row { color: var(--text); }
+#documentOutline .outline-row[aria-current] {
+    color: var(--tana-event);
+    background: var(--tana-event-bg) !important;
+}
+.search-input:focus-within { box-shadow: 0 0 0 2px var(--tana-org-bg); }
+.search-options button.active { border-color: var(--accent) !important; }
+.sima-references .reference-card { background: var(--surface); border-color: var(--border); }
+:root .sima-references .reference-excerpt .reference-target {
+    color: var(--tana-ink);
+    text-decoration-color: var(--tana-investlog);
+    background: var(--tana-investlog-bg);
+}
+.sima-table-block:focus-within .sima-table .selected,
+.sima-text-pair > textarea::selection { background: var(--selection); }
+.diff-grid .changed, #conflictBar { color: var(--search-hit-text); }
+.sq-menu .danger, .sq-dialog .danger { color: var(--tana-project); }
+.sq-backdrop, .sq-modal-layer, .sima-table-size::backdrop { background: var(--tana-scrim); }
+.sq-backdrop .sq-dialog button.sq-primary { color: var(--bg); }
+.sq-backdrop .sq-dialog button:active { filter: none; border-color: var(--accent); }
+.sq-menu, .sq-dialog, .sima-table-size, .sq-backdrop .sq-dialog { box-shadow: 0 12px 38px var(--tana-shadow); }
+.sima-table-menu, #toast { box-shadow: 0 3px 12px var(--tana-shadow); }
+
+/* Fenced code and rendered diagrams also ship with their own default colors. */
+.sima-document .hljs { color: var(--text); background: var(--surface); }
+.sima-document .hljs :is([class^="hljs-"], [class*=" hljs-"]) { color: var(--text); }
+.sima-document .hljs :is(.hljs-doctag, .hljs-keyword, .hljs-template-tag, .hljs-template-variable, .hljs-type, .language_) { color: var(--tana-event); }
+.sima-document .hljs :is(.hljs-title, .hljs-symbol, .hljs-section) { color: var(--tana-insight); }
+.sima-document .hljs :is(.hljs-attr, .hljs-attribute, .hljs-meta, .hljs-operator, .hljs-variable, .hljs-selector-attr, .hljs-selector-class, .hljs-selector-id) { color: var(--tana-books); }
+.sima-document .hljs :is(.hljs-number, .hljs-literal, .hljs-built_in) { color: var(--tana-mom); }
+.sima-document .hljs :is(.hljs-string, .hljs-regexp, .hljs-name, .hljs-selector-tag) { color: var(--tana-investlog); }
+.sima-document .hljs :is(.hljs-comment, .hljs-formula, .hljs-code) { color: var(--muted); }
+.sima-document .hljs .hljs-bullet { color: var(--tana-person); }
+.sima-document .hljs .hljs-addition { color: var(--tana-investlog); background: var(--tana-investlog-bg); }
+.sima-document .hljs .hljs-deletion { color: var(--tana-project); background: var(--tana-project-bg); }
+.sima-document .sima-diagram :is(.node rect, .node polygon, .node ellipse, .node circle) { fill: var(--tana-books-bg); stroke: var(--tana-books); }
+.sima-document .sima-diagram text, .sima-document .sima-diagram marker path { fill: var(--text); }
+.sima-document .sima-diagram :is(.edgePath path, path.flowchart-link, .messageLine0, .messageLine1) { stroke: var(--text); }

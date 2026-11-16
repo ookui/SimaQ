@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleName</key><string>SimaQ</string><key>CFBundleDisplayName</key><string>SimaQ</string>
+<key>CFBundleIdentifier</key><string>com.simaq.editor</string><key>CFBundleExecutable</key><string>SimaQ</string>
+<key>CFBundlePackageType</key><string>APPL</string><key>CFBundleShortVersionString</key><string>0.2.3</string><key>CFBundleVersion</key><string>6</string>
+<key>CFBundleDevelopmentRegion</key><string>en</string>
+<key>CFBundleLocalizations</key><array><string>en</string><string>zh-Hans</string><string>zh-Hant</string></array>
+<key>CFBundleIconFile</key><string>SimaQ.icns</string><key>LSMinimumSystemVersion</key><string>13.0</string>
+<key>LSApplicationCategoryType</key><string>public.app-category.productivity</string><key>NSHighResolutionCapable</key><true/>
+<key>NSPrincipalClass</key><string>NSApplication</string>
+<key>CFBundleDocumentTypes</key><array><dict><key>CFBundleTypeRole</key><string>Editor</string><key>LSHandlerRank</key><string>Alternate</string><key>LSItemContentTypes</key><array><string>net.daringfireball.markdown</string><string>public.plain-text</string><string>public.json</string><string>public.svg-image</string><string>public.folder</string></array></dict><dict><key>CFBundleTypeRole</key><string>Viewer</string><key>LSHandlerRank</key><string>Alternate</string><key>LSItemContentTypes</key><array><string>public.html</string><string>com.adobe.pdf</string></array></dict></array>
+</dict></plist>
