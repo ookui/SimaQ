@@ -55,6 +55,47 @@ try {
   const field = host.querySelector('textarea');
   check(field.value.slice(field.selectionStart, field.selectionEnd) === '标签',
     '行内格式元素边界排除 Markdown 标记和后文');
+  const page = Array.from({length:100}, (_, i) =>
+    '第 ' + i + ' 节\n\n' + Array.from({length:8}, (_, j) =>
+      '- **要点** ' + i + '/' + j + '，此处可以编辑。').join('\n')).join('\n\n');
+  editor.setText(page);
+  const viewport = host.querySelector('.sima-editor');
+  for (const [section, search] of [[45, false], [60, false], [82, true]]) {
+    const label = section + '/6';
+    const at = editor.getText().indexOf(label);
+    if (search) editor.showSearchResult([{start:at, length:label.length}], {start:at, length:label.length});
+    const item = [...host.querySelectorAll('li')].find(li => li.textContent.includes(' ' + label + '，'));
+    const walker = document.createTreeWalker(item, NodeFilter.SHOW_TEXT);
+    while (walker.nextNode() && !walker.currentNode.data.includes(label)) {}
+    const node = walker.currentNode, offset = node.data.indexOf(label);
+    const glyph = document.createRange();
+    glyph.setStart(node, offset);
+    glyph.setEnd(node, offset + 1);
+    viewport.scrollTop += glyph.getBoundingClientRect().top - viewport.getBoundingClientRect().top - 180;
+    const rect = glyph.getBoundingClientRect();
+    const click = {bubbles:true, cancelable:true, clientX:rect.left + 1, clientY:rect.top + rect.height / 2};
+    getSelection().removeAllRanges();
+    const target = document.elementFromPoint(click.clientX, click.clientY);
+    target.dispatchEvent(new MouseEvent('mousedown', click));
+    viewport.focus({preventScroll:true});
+    target.dispatchEvent(new MouseEvent('mouseup', click));
+    target.dispatchEvent(new MouseEvent('click', click));
+    await new Promise(resolve => setTimeout(resolve, 60));
+    const input = host.querySelector('.sima-block-input');
+    check(input && document.activeElement === input && editor.getState().selection.head === at,
+      '滚动后点击第 ' + section + ' 节进入对应字符');
+    const mirror = host.querySelector('.sima-text-mirror');
+    const nodes = document.createTreeWalker(mirror, NodeFilter.SHOW_TEXT);
+    let local = input.selectionStart;
+    while (nodes.nextNode() && local >= nodes.currentNode.length) local -= nodes.currentNode.length;
+    glyph.setStart(nodes.currentNode, local);
+    glyph.collapse(true);
+    check(Math.abs(glyph.getBoundingClientRect().top - rect.top) <= 2,
+      '第 ' + section + ' 节的点击行保持在原来的屏幕位置');
+    input.setRangeText('字', input.selectionStart, input.selectionEnd, 'end');
+    input.dispatchEvent(new InputEvent('input', {bubbles:true, inputType:'insertText', data:'字'}));
+    check(editor.getText().slice(at, at + 1 + label.length) === '字' + label, '在长列表的点击位置输入');
+  }
   return {checks};
 } finally {
   editor.destroy();

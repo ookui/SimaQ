@@ -105,8 +105,8 @@
       if (!field) return;
       const raw=text.slice(active.start,active.end);
       const [a,b]=range().map(n=>normalize(raw.slice(0,clamp(n-active.start,0,raw.length))).length);
-      if (focus) field.focus({preventScroll:true});
       field.setSelectionRange(a,b,selection.head<selection.anchor?'backward':'forward');
+      if (focus) field.focus({preventScroll:true});
     }
     function blockAt(n) {
       return blocks.find(b=>n>=b.start && n<=b.end) || blocks.find(b=>b.start>n) || blocks.at(-1);
@@ -334,13 +334,13 @@
       options.onOutlineChange?.();
       for(const b of blocks)b.table?.destroy();
       mathView?.schedule();
-      active=null;activeTable=null;field=null;mirror=null;doc.replaceChildren();
+      active=null;activeTable=null;field=null;mirror=null;
       viewport.classList.toggle('sima-source',source);
       viewport.classList.toggle('sima-focus-mode',focusMode);
       viewport.classList.toggle('sima-typewriter',typewriter);
       if (source) {
         const b={type:'source',start:0,end:text.length};
-        blocks=[b];doc.append(makeBlock(b));fieldBlock(b,focus);return;
+        blocks=[b];doc.replaceChildren(makeBlock(b));fieldBlock(b,focus);return;
       }
       blocks=unpack();
       const desired={...selection};
@@ -358,7 +358,7 @@
           fieldBlock(b,false);
         } else drawBlock(b);
       }
-      doc.append(fragment);
+      doc.replaceChildren(fragment);
       applyFolds(target);
       if(target?.table && focus) {
         const inside=target.table.focusAt(desired.anchor-target.start,desired.head-target.start);
@@ -754,11 +754,42 @@
       text=String(next??'');undo.length=redo.length=0;hits=[];currentHit=null;
       pick(selection.anchor,selection.head);draw(false,false);refreshPreview?.();
     }
-    function hitPoint(x,y) {
-      const r=document.caretRangeFromPoint?.(x,y);
-      if(r)return sourcePoint(r.startContainer,r.startOffset);
+    function rangeAtPoint(x,y) {
+      const range=document.caretRangeFromPoint?.(x,y);
+      if(range)return range;
       const p=document.caretPositionFromPoint?.(x,y);
-      return p?sourcePoint(p.offsetNode,p.offset):null;
+      if(!p)return null;
+      const caret=document.createRange();
+      caret.setStart(p.offsetNode,p.offset);caret.collapse(true);
+      return caret;
+    }
+    function hitPoint(x,y) {
+      const r=rangeAtPoint(x,y);
+      return r?sourcePoint(r.startContainer,r.startOffset):null;
+    }
+    function editAtClick(b,caret,anchor,head) {
+      const line=caret?.getBoundingClientRect();
+      const blockTop=b.node.getBoundingClientRect().top;
+      // An edit can change Markdown structure or reference definitions in other blocks.
+      if (anchor<b.start || head<b.start || anchor>b.end || head>b.end || b.table ||
+          (active && (active===b || active.source!==text.slice(active.start,active.end)))) {
+        choose(anchor,head,true,false);
+      } else {
+        const previous=active;
+        finishBlock();
+        pick(anchor,head);
+        outlineJump=null;
+        b.node.replaceChildren();
+        if(b.type==='yaml'){yamlCollapsed=false;yamlButton(b);}
+        fieldBlock(b,true);
+        if(previous && hits.length) highlightRendered();
+        options.onOutlineChange?.();
+      }
+      // Rendered lists and wrapped links can have a very different height in source.
+      // Keep the clicked line at the same screen coordinate after layout and focus.
+      const editedLine=line?.height ? caretRect(head) : null;
+      if(editedLine?.height) viewport.scrollTop+=editedLine.top-line.top;
+      else if(active) viewport.scrollTop+=active.node.getBoundingClientRect().top-blockTop;
     }
     // WebKit returns the nearest caret even for a click in the margin or
     // well beyond a line's last glyph. Only actual text should activate it.
@@ -873,7 +904,10 @@
       const delta = e.key === 'ArrowLeft' ? -8 : 8;
       saveImageLayout(grip, {width:e.key.startsWith('Arrow') ? clamp(width + delta, 1, 99999) : null}, true);
     }, {capture:true});
+    let pointerFocusing=false;
     on(viewport,'mousedown',e=>{
+      pointerFocusing=true;
+      setTimeout(()=>{pointerFocusing=false;},0);
       // Let the scrollbar perform its native drag and track clicks.
       if (e.target===viewport) {
         const rect=viewport.getBoundingClientRect();
@@ -914,7 +948,7 @@
       if(link){e.preventDefault();options.onLink?.(link.dataset.link||link.getAttribute('href'),{wiki:link.hasAttribute('data-wiki'),newTab:e.metaKey||e.ctrlKey});return;}
       if(composing || e.target.closest('textarea,button,details.sima-svg-preview,.sima-table-block,.sima-text-pair') || searchWhitespace(e))return;
       const box=e.target.closest('.sima-block'),b=blocks.find(item=>item.node===box);
-      if(!b){if(doc.contains(e.target)||e.target===viewport)choose(text.length);return;}
+      if(!b)return;
       if(b.type==='yaml' && !e.target.closest('.md-meta-block')) return;
       if(e.target.matches('input[type=checkbox]')){
         const checks=[...box.querySelectorAll('input[type=checkbox]')], raw=text.slice(b.start,b.end);
@@ -925,13 +959,19 @@
       const dom=window.getSelection();
       if(dom && !dom.isCollapsed && doc.contains(dom.anchorNode) && doc.contains(dom.focusNode)){
         const anchor=sourcePoint(dom.anchorNode,dom.anchorOffset), head=sourcePoint(dom.focusNode,dom.focusOffset);
-        if(anchor!=null && head!=null){choose(anchor,head,true,false);return;}
+        if(anchor!=null && head!=null){
+          const caret=document.createRange();
+          caret.setStart(dom.focusNode,dom.focusOffset);caret.collapse(true);
+          editAtClick(b,caret,anchor,head);return;
+        }
       }
-      const point=hitPoint(e.clientX,e.clientY);
-      choose(point??b.start);
+      const caret=rangeAtPoint(e.clientX,e.clientY);
+      const inside=caret && box.contains(caret.startContainer);
+      const point=inside ? sourcePoint(caret.startContainer,caret.startOffset) : b.start;
+      editAtClick(b,inside ? caret : null,point??b.start,point??b.start);
     });
     on(viewport,'focusin',e=>{
-      if(e.target===viewport && viewport.matches(':focus-visible') && !field && !composing && !activeTable)focus();
+      if(e.target===viewport && !pointerFocusing && viewport.matches(':focus-visible') && !field && !composing && !activeTable)focus();
     });
     on(viewport,'keydown',e=>{
       if(composing||e.isComposing||e.keyCode===229||e.defaultPrevented)return;
