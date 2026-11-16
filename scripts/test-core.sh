@@ -9,8 +9,8 @@ export SIMAQ_SEARCH_INDEX_DIR="$testdir/index"
 cache="${TMPDIR:-/tmp}/simaq-swift-cache"
 common=(-swift-version 5 -module-cache-path "$cache")
 
-node --test Web/settings.test.cjs
-swiftc "${common[@]}" Native/MarkdownLinks.swift Native/NoteMetadata.swift Native/Workspace.swift tests/workspaceTests.swift -o "$testdir/workspace-tests"
+node --test Web/settings.test.cjs Web/editor/*.test.cjs
+swiftc "${common[@]}" Native/MarkdownLinks.swift Native/NoteMetadata.swift Native/Workspace.swift Native/Assets.swift tests/workspaceTests.swift -o "$testdir/workspace-tests"
 "$testdir/workspace-tests"
 swiftc "${common[@]}" -I Native/CSQLite -lsqlite3 Native/MarkdownLinks.swift Native/Search.swift tests/search_tests.swift -o "$testdir/search-tests"
 "$testdir/search-tests"

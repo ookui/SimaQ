@@ -23,7 +23,7 @@
     let text = String(options.text ?? ''), source = !!options.literal, yamlCollapsed = options.settings?.yamlCollapsed !== false;
     let focusMode = false, typewriter = false, selection = {anchor:0, head:0};
     let blocks = [], active = null, activeTable = null, field = null, mirror = null;
-    let chooser = null;
+    let chooser = null, outlineJump = null;
     let composing = false, destroyed = false, pendingActions = [], pendingScroll = null;
     let tableWidths = [];
     let foldedHeadings = new Set();
@@ -215,9 +215,23 @@
       stamp(b);
       return node;
     }
-    function yamlButton(b) {
+    function yamlButton(b, preview) {
       const button=element('button','sima-yaml-toggle');button.type='button';
-      button.textContent=(yamlCollapsed?'▸':'▾')+'  元数据';
+      button.setAttribute('aria-label','YAML');
+      if (preview) {
+        button.onmouseenter=()=>{
+          if (yamlCollapsed) {
+            preview.hidden=false;
+            button.setAttribute('aria-expanded','true');
+          }
+        };
+        button.onmouseleave=()=>{
+          if (yamlCollapsed) {
+            preview.hidden=true;
+            button.setAttribute('aria-expanded','false');
+          }
+        };
+      }
       button.setAttribute('aria-expanded',String(!yamlCollapsed));
       button.addEventListener('click',e=>{e.stopPropagation();action('view.yaml');});
       b.node.append(button);
@@ -249,6 +263,13 @@
         if (collapsed && !hiddenBelow) hiddenBelow = b.level;
       }
     }
+    // Extend the scroll range only when a heading near the document end needs it.
+    function positionHeading(rect, viewportY) {
+      const desired = viewport.scrollTop + rect.top - viewportY;
+      const missing = Math.ceil(desired + viewport.clientHeight - viewport.scrollHeight);
+      if (missing > 0) viewport.style.setProperty('--fold-tail',missing+'px');
+      viewport.scrollTop = Math.max(0,desired);
+    }
     function drawBlock(b) {
       if (b.level) {
         const button = element('button','sima-fold');
@@ -256,30 +277,46 @@
         button.onclick = e => {
           e.stopPropagation();
           if (composing) return;
-          if (foldedHeadings.has(b.anchor)) foldedHeadings.delete(b.anchor);
-          else foldedHeadings.add(b.anchor);
+          const top = b.node.getBoundingClientRect().top;
           pick(b.start);
-          draw(false);
-          blockAt(b.start)?.node.querySelector('.sima-fold')?.focus({preventScroll:true});
+          // End a live edit before hiding it. Reading-mode folds keep their existing DOM.
+          if (active || activeTable) draw(false);
+          const heading = blockAt(b.start);
+          if (!heading?.level) return;
+          if (foldedHeadings.has(heading.anchor)) foldedHeadings.delete(heading.anchor);
+          else foldedHeadings.add(heading.anchor);
+          applyFolds();
+          viewport.style.removeProperty('--fold-tail');
+          positionHeading(heading.node.getBoundingClientRect(),top);
+          heading.node.querySelector('.sima-fold').focus({preventScroll:true});
+          options.onOutlineChange?.();
           options.onViewChange?.();
         };
         b.node.append(button);
       }
       const raw=text.slice(b.start,b.end);
-      if (b.type==='yaml') {yamlButton(b);if(yamlCollapsed)return;}
+      if (b.type==='yaml') {
+        const preview=element('pre','md-meta-block');
+        const lines=normalize(raw).split('\n');
+        preview.textContent=lines.slice(1,-1).join('\n');
+        preview.hidden=yamlCollapsed;
+        yamlButton(b,preview);
+        b.node.append(preview);
+        return;
+      }
       if (b.type==='blank')return;
       if(b.type==='table' && window.SimaTables?.parse(raw)) {
         const ordinal=blocks.filter(item=>item.type==='table' && item.start<b.start).length;
         b.table=window.SimaTables.mount(b.node,raw,{
           widths:tableWidths[ordinal],onWidthsChange:widths=>{tableWidths[ordinal]=widths;},
           change:(next,meta)=>onTableChange(b,next,meta,ordinal),
-          renderInline:window.SimaRender.inline ? s=>window.SimaRender.inline(s,{...b.context,...renderOptions}):undefined,
+          renderInline:window.SimaRender.inline ? s=>window.SimaRender.inline(s,{...b.context,...renderOptions,editableImages:true}):undefined,
           selection:(a,z)=>{activeTable=b;pick(b.start+a,b.start+z);},
           activate:()=>{activeTable=b;if(active && !source && active!==b)finishBlock();},
           openLink:(s,o)=>options.onLink?.(s,o),
           exit:direction=>{const other=blocks[blocks.indexOf(b)+direction];if(other)choose(direction<0?other.end:other.start);},
         });
-      } else b.node.insertAdjacentHTML('beforeend',window.SimaRender.renderBlock({...b,source:raw}, renderOptions));
+      } else b.node.insertAdjacentHTML('beforeend',window.SimaRender.renderBlock({...b,source:raw}, {...renderOptions,editableImages:true}));
     }
     function finishBlock() {
       // Only replace the text field leaving focus. Other live controls retain their DOM.
@@ -293,6 +330,7 @@
       prev.node.replaceWith(fragment);blocks.splice(index,1,...freshly);mathView?.schedule();applyFolds();options.onOutlineChange?.();
     }
     function draw(edit, focus=false, preferTable=true) {
+      outlineJump=null;
       options.onOutlineChange?.();
       for(const b of blocks)b.table?.destroy();
       mathView?.schedule();
@@ -378,7 +416,7 @@
     // Build source positions only on demand. Markdown punctuation and link targets have no visible glyph.
     function mapNodes(b) {
       const raw=text.slice(b.start,b.end), result=[];
-      let cursor=0;
+      let cursor=b.type==='yaml' ? (raw.match(/^[^\r\n]*(?:\r\n|\r|\n)/)?.[0].length || 0) : 0;
       const walker=document.createTreeWalker(b.node,NodeFilter.SHOW_TEXT);
       while(walker.nextNode()) {
         const node=walker.currentNode, parent=node.parentElement;
@@ -481,7 +519,7 @@
       const gone=reverse?entry.old:entry.inserted, ins=reverse?entry.inserted:entry.old;
       write(entry.from,entry.from+gone.length,ins,reverse?entry.after:entry.before,false);
       if(entry.widths)tableWidths[entry.widths.ordinal]=entry.widths[reverse?'after':'before'];
-      dest.push(entry);draw(true,true);reveal();return true;
+      dest.push(entry);draw(!entry.imageLayout,!entry.imageLayout);reveal();return true;
     }
     function focus() {
       if(composing || host.contains(document.activeElement) && document.activeElement.tagName==='TEXTAREA')return;
@@ -531,6 +569,9 @@
       return outlineItems;
     }
     function centeredHeading(items) {
+      if (outlineJump && Math.abs(outlineJump.scrollTop-viewport.scrollTop)<1 &&
+          items.some(item=>item.start===outlineJump.start)) return outlineJump.start;
+      outlineJump=null;
       const center=viewport.getBoundingClientRect().top+viewport.clientHeight/2;
       let lo=0,hi=items.length;
       while(lo<hi) {
@@ -555,14 +596,25 @@
     }
     function goToHeading(start) {
       if(composing) { pendingActions.push(()=>goToHeading(start)); return; }
-      if(source) { pick(start);placeField(true);reveal('center');return; }
       pick(start);
-      if(active || activeTable || doc.querySelector('.editing')) draw(false);
-      const target=blockAt(start);
-      if(target) {
+      let rect;
+      viewport.style.removeProperty('--fold-tail');
+      if(source) {
+        placeField(true);
+        rect=caretRect(start);
+      } else {
+        if(active || activeTable || doc.querySelector('.editing')) draw(false);
+        const target=blockAt(start);
+        if (!target) return;
         applyFolds(target);
         const heading=target.node.querySelector('h1,h2,h3,h4,h5,h6');
-        (heading || target.node).scrollIntoView({block:'center'});
+        rect=(heading || target.node).getBoundingClientRect();
+      }
+      if (rect) {
+        const lineHeight=parseFloat(getComputedStyle(doc).lineHeight) || 26;
+        const inset=Math.min(lineHeight*2.5,viewport.clientHeight*0.22);
+        positionHeading(rect,viewport.getBoundingClientRect().top+inset);
+        outlineJump={start,scrollTop:viewport.scrollTop};
       }
       options.onOutlineChange?.();
     }
@@ -643,15 +695,21 @@
       if(id==='edit.undo'||id==='edit.redo')return history(id==='edit.redo');
       if(options.literal && !['edit.selectAll','edit.copy','edit.cut','edit.paste','insertText'].includes(id))return false;
       if(id==='view.source') {
-        const reading=viewportAnchor();source=!source;draw(true,true);restoreAnchor(reading);return true;
+        const reading=viewportAnchor();source=!source;viewport.style.removeProperty('--fold-tail');draw(true,true);restoreAnchor(reading);return true;
       }
       if(id==='view.yaml'){
         yamlCollapsed=!yamlCollapsed;
         if(!source) {
           const y=blocks.find(b=>b.type==='yaml');
           if(y) {
-            if(y===active && yamlCollapsed){active=null;field=null;mirror=null;}
-            if(y!==active){y.node.replaceChildren();drawBlock(y);}
+            if(y===active && yamlCollapsed) {
+              finishBlock();
+            } else {
+              const preview=y.node.querySelector('.md-meta-block');
+              if(preview) preview.hidden=yamlCollapsed;
+              y.node.querySelector('.sima-yaml-toggle')?.setAttribute('aria-expanded',String(!yamlCollapsed));
+            }
+            options.onViewChange?.();
           }
         }
         return true;
@@ -724,6 +782,97 @@
       return !Array.from(around.getClientRects()).some(r=>
         e.clientX>=r.left && e.clientX<=r.right && e.clientY>=r.top && e.clientY<=r.bottom);
     }
+    function imageEnd(grip) {
+      const box = grip.closest('.sima-block'), block = blocks.find(b => b.node === box);
+      if (!block) return null;
+      const raw = text.slice(block.start, block.end), offset = Number(grip.dataset.offset);
+      const cell = grip.closest('[data-row][data-column]');
+      if (!cell) return block.start + rawOffset(raw, offset);
+      const model = window.SimaTables.parse(raw);
+      const start = model?.rows[cell.dataset.row]?.[cell.dataset.column]?.start;
+      return start == null ? null : block.start + start + offset;
+    }
+    function saveImageLayout(grip, changes, refocus = false) {
+      const pos = imageEnd(grip);
+      if (pos == null) return;
+      const [old, oldWidth, oldAlign] = window.SimaRender.imageLayout.exec(text.slice(pos));
+      const {width = oldWidth, align = oldAlign} = changes;
+      const next = (width ? '{width=' + width + '}' : '') + (align ? '{align=' + align + '}' : '');
+      if (old === next) return;
+      write(pos, pos + old.length, next, {anchor:pos, head:pos});
+      undo.at(-1).imageLayout = true;
+      draw(false);
+      if (refocus) [...doc.querySelectorAll('.sima-image-grip')].find(g => imageEnd(g) === pos)?.focus({preventScroll:true});
+    }
+    let resizing = null, swallowResizeClick = false;
+    on(viewport, 'contextmenu', e => {
+      const grip = e.target.closest('.sima-sized-image')?.querySelector('.sima-image-grip');
+      if (!grip || composing || !options.onImageMenu) return;
+      e.stopPropagation();
+      const current = grip.closest('[data-image-align]')?.dataset.imageAlign;
+      const choices = [['left','图片居左'],['center','图片居中'],['right','图片居右']];
+      const items = choices.map(([align,label]) =>
+        [label, () => saveImageLayout(grip,{align}), align===current ? 'check' : null]);
+      const image = grip.previousElementSibling;
+      const point = {x:e.clientX,y:e.clientY};
+      const useNative = e.target === image;
+      // Preserve WebKit's default menu on the image itself, including linked-image actions.
+      if (!useNative) e.preventDefault();
+      options.onImageMenu(point,image,items,useNative);
+    }, {capture:true});
+    on(viewport, 'pointerdown', e => {
+      swallowResizeClick = false;
+      if ((e.button===2 || e.ctrlKey) && e.target.closest('.sima-sized-image')) {
+        e.stopPropagation();
+        return;
+      }
+      const grip = e.target.closest('.sima-image-grip');
+      if (!grip || composing || e.button !== 0) return;
+      e.stopPropagation();
+      e.preventDefault();
+      const img = grip.previousElementSibling;
+      const align = grip.closest('[data-image-align]')?.dataset.imageAlign;
+      resizing = {grip, img, id:e.pointerId, x:e.clientX, scale:align==='right' ? -1 : align==='center' ? 2 : 1, width:img.getBoundingClientRect().width,
+        original:img.getAttribute('width')};
+      grip.setPointerCapture(e.pointerId);
+    }, {capture:true});
+    on(doc, 'pointermove', e => {
+      if (resizing?.id !== e.pointerId) return;
+      const delta = e.clientX - resizing.x;
+      if (Math.abs(delta) < 2 && resizing.next == null) return;
+      resizing.next = clamp(Math.round(resizing.width + delta*resizing.scale), 1, 99999);
+      resizing.img.width = resizing.next;
+    });
+    function endResize(e) {
+      if (resizing?.id !== e.pointerId) return;
+      const {grip, img, original, next} = resizing;
+      resizing = null;
+      if (e.type === 'pointerup' && next != null) {
+        swallowResizeClick = true;
+        saveImageLayout(grip, {width:next});
+      }
+      else if (original == null) img.removeAttribute('width');
+      else img.setAttribute('width', original);
+    }
+    for (const event of ['pointerup', 'pointercancel', 'lostpointercapture']) on(doc, event, endResize);
+    on(viewport, 'click', e => {
+      if (swallowResizeClick || e.target.closest('.sima-image-grip')) {
+        swallowResizeClick = false; e.preventDefault(); e.stopPropagation();
+      }
+    }, {capture:true});
+    on(doc, 'dblclick', e => {
+      const grip = e.target.closest('.sima-image-grip');
+      if (grip) { e.preventDefault(); e.stopPropagation(); saveImageLayout(grip, {width:null}); }
+    }, {capture:true});
+    on(doc, 'keydown', e => {
+      const grip = e.target.closest('.sima-image-grip');
+      if (!grip || !['ArrowLeft','ArrowRight','Enter',' '].includes(e.key)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const width = Math.round(grip.previousElementSibling.getBoundingClientRect().width);
+      const delta = e.key === 'ArrowLeft' ? -8 : 8;
+      saveImageLayout(grip, {width:e.key.startsWith('Arrow') ? clamp(width + delta, 1, 99999) : null}, true);
+    }, {capture:true});
     on(viewport,'mousedown',e=>{
       // Let the scrollbar perform its native drag and track clicks.
       if (e.target===viewport) {
@@ -766,7 +915,7 @@
       if(composing || e.target.closest('textarea,button,details.sima-svg-preview,.sima-table-block,.sima-text-pair') || searchWhitespace(e))return;
       const box=e.target.closest('.sima-block'),b=blocks.find(item=>item.node===box);
       if(!b){if(doc.contains(e.target)||e.target===viewport)choose(text.length);return;}
-      if(b.type==='yaml'&&yamlCollapsed){action('view.yaml');return;}
+      if(b.type==='yaml' && !e.target.closest('.md-meta-block')) return;
       if(e.target.matches('input[type=checkbox]')){
         const checks=[...box.querySelectorAll('input[type=checkbox]')], raw=text.slice(b.start,b.end);
         const m=[...raw.matchAll(/^[ \t]*(?:[-*+]|\d+[.)])\s+\[([ xX])\]/gm)][checks.indexOf(e.target)];

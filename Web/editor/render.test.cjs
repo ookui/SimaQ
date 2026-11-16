@@ -38,3 +38,37 @@ require('node:test')('dollar prices and numeric TeX in the same paragraph',()=>{
     [String.raw`\$5，代码 `+'\u0060$x$\u0060'+String.raw` 和 \(2+2\)。`,['2+2']],
   ]) assert.deepEqual(formulas(source),expected,source);
 });
+
+require('node:test')('local image paths with spaces, titles and per-occurrence widths', async () => {
+  const note = {path:'LifeOS/articles/笔记.md'};
+  const link = '![ IQ 钟形曲线 meme](images/Pasted image 20260524222819.png)';
+  assert.match(r.render(link,note), /<img src="asset:LifeOS\/articles\/images\/Pasted image 20260524222819.png"/);
+  const source = '> - `' + link + '`\n>   ' + link + ' ' + link + '{width=240}';
+  const html = r.render(source,{...note,editableImages:true});
+  const offsets = [...html.matchAll(/data-offset="(\d+)"/g)].map(m=>Number(m[1]));
+  assert.deepEqual(offsets,[source.lastIndexOf(' '+link),source.indexOf('{width')]);
+  const exported = await r.exportHTML(source,note);
+  assert.equal((exported.match(/<img /g)||[]).length,2);
+  assert.match(exported,/width="240"/);
+  assert.doesNotMatch(exported,/sima-image-grip|\{width=/);
+  for(const dest of ['<images/a b.png>', 'images/a%20b.png', 'images/a b.png'])
+    assert.match(r.render('![a]('+dest+' "caption"){width=100}',note),/title="caption" width="100"/);
+  assert.match(r.render('![a](images/a (2).png)',note),/a \(2\)\.png/);
+  assert.match(r.render('![a][ref]{width=88}\n\n[ref]: images/a.png',note),/width="88"/);
+  assert.doesNotMatch(r.render('![a](file:local bad.png)\n\n`'+link+'`\n\n[a](local bad.png)',note),/<img |<a /);
+});
+
+require('node:test')('image alignment is per occurrence and exported with its width', async () => {
+  const image='![图](images/示例 图.png)';
+  for (const [align,justify] of Object.entries({left:'flex-start',center:'center',right:'flex-end'})) {
+    for (const width of ['', '{width=240}']) {
+      const source=image+' '+image+width+'{align='+align+'}';
+      const html=await r.exportHTML(source);
+      assert.equal((html.match(/data-image-align=/g)||[]).length,1);
+      assert.ok(html.includes('justify-content:'+justify));
+      assert.equal(html.includes('width="240"'),!!width);
+      assert.doesNotMatch(html,/sima-image-grip|\{align=/);
+    }
+  }
+  assert.doesNotMatch(r.render(image+'{align=unknown}'),/data-image-align/);
+});

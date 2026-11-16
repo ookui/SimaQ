@@ -44,8 +44,28 @@
 .sima-document code { font-family: var(--monospace, ui-monospace, Menlo, monospace); }
 .sima-document :not(pre)>code { background: var(--surface); padding: .08em .28em; border-radius: .2em; }
 .sima-document img { max-width: 100%; height: auto; }
+.sima-sized-image { display: inline-block; position: relative; max-width: 100%; vertical-align: middle; }
+.sima-sized-image > img { display: block; }
+#workspaceShell .sima-image-grip {
+  position: absolute; right: 0; bottom: 0; width: 24px; height: 22px; padding: 0;
+  border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text);
+  font: 16px/1 system-ui; cursor: ew-resize; touch-action: none; opacity: 0;
+}
+#workspaceShell .sima-sized-image:hover > .sima-image-grip, #workspaceShell .sima-image-grip:focus-visible { opacity: 1; }
+#workspaceShell [data-image-align="right"] .sima-image-grip { left: 0; right: auto; }
+@media print { .sima-image-grip { display: none; } }
 .sima-document hr { border: 0; border-top: 1px solid var(--border); margin-block: 1em; }
-.sima-block .sima-yaml-toggle { font: 12px/1.6 -apple-system,sans-serif !important; color: var(--muted) !important; padding: .25em .1em; }
+/* A small visible mark inside a wider pointer and keyboard target. */
+.sima-document .sima-block .sima-yaml-toggle {
+  display:grid; place-items:center; width:64px; height:22px; padding:0;
+  margin-inline:auto; border:0; border-radius:4px; background:transparent !important; cursor:pointer;
+}
+.sima-yaml-toggle::before {
+  content:""; width:32px; height:2px; background:var(--border); border-radius:1px;
+}
+.sima-yaml-toggle:is(:hover,:focus-visible,[aria-expanded="true"])::before { background:var(--muted); }
+.sima-block .md-meta-block[hidden] { display:none !important; }
+.sima-editor::after { content:""; display:block; height:var(--fold-tail,0px); pointer-events:none; }
 .sima-block .md-meta-block { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: .6em .9em; margin: .4em 0; font: .88em/1.55 var(--monospace,ui-monospace,monospace); }
 .sima-block .yaml-key { color: var(--yaml-key, var(--accent)); }
 .sima-block .yaml-value { color: var(--yaml-value, var(--muted)); }

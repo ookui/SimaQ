@@ -39,6 +39,24 @@ ok(editor.getText() === normalize(raw), '真实编辑器读取混合换行样本
 await SimaShell.run('file.save');
 ok((await rpc('read', { path: fixturePath })).version === initial.version, '未编辑保存保留原始文件字节');
 
+// The pointer can leave the handle while staying inside the full-width YAML block.
+const yamlHandle = host().querySelector('.sima-yaml-toggle');
+const yamlPreview = host().querySelector('.md-meta-block');
+const initiallyCollapsed = editor.getState().yamlCollapsed;
+if (!initiallyCollapsed) yamlHandle.click();
+function leaveYamlHandle() {
+  yamlHandle.dispatchEvent(new MouseEvent('mouseleave', {relatedTarget:yamlHandle.parentElement}));
+}
+yamlHandle.dispatchEvent(new MouseEvent('mouseenter'));
+ok(!yamlPreview.hidden, '悬停细线显示 YAML');
+leaveYamlHandle();
+ok(yamlPreview.hidden && yamlHandle.getAttribute('aria-expanded') === 'false', '指针移到同一行的空白处即收起预览');
+yamlHandle.dispatchEvent(new MouseEvent('mouseenter'));
+yamlHandle.click();
+leaveYamlHandle();
+ok(!yamlPreview.hidden && !editor.getState().yamlCollapsed, '点击固定后移出细线仍显示 YAML');
+if (initiallyCollapsed) yamlHandle.click();
+
 const typingAt = editor.getText().indexOf('正文输入位置');
 editor.locate(typingAt, 0);
 editor.focus();
@@ -216,6 +234,47 @@ await wait(()=>currentSection()==='第二节','标题经过中线时应切换到
 ok(!document.querySelector('#sidebar [data-mode="outline"]') &&
   outlineList.getBoundingClientRect().left>=viewport.getBoundingClientRect().right-1,
   '大纲位于正文右侧，左栏保留目录和搜索');
+outlineList.children[1].click();
+const jumpInset = Math.min(parseFloat(getComputedStyle(host().querySelector('.sima-document')).lineHeight)*2.5,viewport.clientHeight*0.22);
+await wait(()=>Math.abs(nextHeading.getBoundingClientRect().top-viewport.getBoundingClientRect().top-jumpInset)<2,
+  '点击大纲后标题上方留出约两到三行');
+editor.setText('# 首节\n\n'+outlineBody+'## 末节');
+await wait(()=>outlineList.lastChild?.textContent==='末节','末节大纲未更新');
+outlineList.lastChild.click();
+await wait(()=>Math.abs(host().querySelector('h2').getBoundingClientRect().top-viewport.getBoundingClientRect().top-jumpInset)<2,
+  '文末标题也能定位到正文上部');
+const imageRef='![图](images/a b.png)';
+editor.setText(imageRef+' '+imageRef+'{width=240}');
+const realRpc=window.rpc;
+let additions, imageTransfer;
+window.rpc=(method,args)=>{
+  if (method==='prepareImageMenu') { additions=args; return Promise.resolve(true); }
+  if (method==='exportImage' || method==='copyImage') { imageTransfer={method,...args}; return Promise.resolve(true); }
+  return realRpc(method,args);
+};
+async function chooseImageAction(label) {
+  additions=null;
+  const image=host().querySelectorAll('.sima-sized-image img')[1];
+  const event=new MouseEvent('contextmenu',{bubbles:true,cancelable:true,button:2});
+  image.dispatchEvent(event);
+  ok(!event.defaultPrevented,'保留 WebKit 图片菜单');
+  await wait(()=>additions,'缺少图片菜单扩展');
+  const index=additions.items.findIndex(item=>item.title===SimaSettings.menuText(label));
+  ok(index>=0,'图片菜单提供 '+label);
+  await SimaShell.event('imageMenuAction',{token:additions.token,index});
+}
+try {
+  for (const [label,align] of [['图片居中','center'],['图片居右','right'],['图片居左','left']]) {
+    await chooseImageAction(label);
+    await wait(()=>editor.getText()===imageRef+' '+imageRef+'{width=240}{align='+align+'}',
+      '对齐所点图片并保留宽度');
+  }
+  for (const [label,method] of [['复制图片','copyImage'],['导出图片…','exportImage']]) {
+    await chooseImageAction(label);
+    await wait(()=>imageTransfer?.method===method && imageTransfer.url.includes('images/a%20b.png'),
+      '操作使用原图地址');
+  }
+} finally {window.rpc=realRpc;}
 editor.setText(initial.text);
 
 return {

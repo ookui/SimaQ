@@ -1,4 +1,5 @@
-import Foundation
+import AppKit
+import UniformTypeIdentifiers
 
 @main struct WorkspaceTests {
     static func main() throws {
@@ -59,6 +60,17 @@ import Foundation
         try fails("newFile",["path":relocate]); try fails("asset",["path":relocate,"filename":"图.png","folder":"../../../outside","data":"AQID"])
         let a:Row = ["path":relocate,"filename":"图 像.png","data":"AQID"]; let a1 = try call("asset",a), a2 = try call("asset",a)
         try assertThat(a1["link"] as? String == "assets/图%20像.png" && a2["link"] as? String == "assets/图%20像-2.png","attachment names and relative paths")
+        let png = try Data(contentsOf: URL(fileURLWithPath:"Web/brand-q.png"))
+        try png.write(to:ws.fileURL("笔记/Pasted image 1.png"))
+        let imageURL = URL(string:"simaq-asset://workspace/%E7%AC%94%E8%AE%B0/Pasted%20image%201.png")!
+        let (bytes,mime) = try AssetHandler.image(imageURL,workspace:ws)
+        try assertThat(bytes == png && mime == "image/png","PNG asset resolves through an encoded path")
+        let clipboard = AssetHandler.clipboardItem(bytes,type:.png)
+        try assertThat(clipboard.data(forType:.png) == png,"copy image supplies original PNG bytes")
+        try assertThat(clipboard.data(forType:.tiff)?.isEmpty == false, "bitmap paste available for TIFF consumers")
+        let resized = "<img src=\"\(imageURL.absoluteString)\" width=\"360\">"
+        let embedded = try AssetHandler.embedImages(resized,workspace:ws)
+        try assertThat(embedded == "<img src=\"data:image/png;base64,\(png.base64EncodedString())\" width=\"360\">","HTML export preserves PNG and display width")
         let utf16 = Data([0xff,0xfe])+"甲\r\n乙".data(using:.utf16LittleEndian)!; try utf16.write(to:ws.fileURL("编码.md")); let u = try call("read",["path":"编码.md"]); _ = try call("save",["path":"编码.md","text":"甲\n三","version":u["version"]!]); try assertThat(Data(contentsOf:ws.fileURL("编码.md")) == Data([0xff,0xfe])+"甲\r\n三".data(using:.utf16LittleEndian)!,"UTF-16 BOM")
         for folder in ["LifeOS","LifeOS/journals","LifeOS/journals/2010","LifeOS/books","Sources","Sources/companies","Custom"] {
             _ = try call("newFolder",["path":folder])

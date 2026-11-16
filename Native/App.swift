@@ -30,7 +30,7 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigatio
     private let reader = ReaderController()
     private let menus = ShellMenu()
     private let io = DispatchQueue(label:"SimaQ.workspace.operations",qos:.userInitiated)
-    private var web:WKWebView!
+    private var web:EditorWebView!
     private var window:WorkspaceWindow!
     private var exporter:DocumentExporter!
     private var data:LocalData!
@@ -57,7 +57,10 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigatio
         let config = WKWebViewConfiguration()
         config.userContentController.addScriptMessageHandler(self,contentWorld:.page,name:"simaq")
         config.setURLSchemeHandler(AssetHandler(workspace:workspace),forURLScheme:"simaq-asset")
-        web = WKWebView(frame:.zero,configuration:config)
+        web = EditorWebView(frame:.zero,configuration:config)
+        web.onImageCommand = { [weak self] token, index in
+            self?.send("imageMenuAction",["token":token,"index":index])
+        }
         web.navigationDelegate = self
         web.allowsMagnification = false
         let bounds = NSScreen.main?.visibleFrame ?? NSRect(x:0,y:0,width:1440,height:900)
@@ -349,6 +352,28 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigatio
         case "readerClose":readerPath = nil;reader.close();reader.view.isHidden = true;done()
         case "openExternal":
             if let value = args["url"] as? String,let url = URL(string:value),["http","https","mailto"].contains(url.scheme?.lowercased() ?? "") {NSWorkspace.shared.open(url)}
+            done()
+        case "prepareImageMenu":
+            guard let x = args["x"] as? Double, let y = args["y"] as? Double,
+                  let token = args["token"] as? String, let items = args["items"] as? [JSONObject] else {
+                throw SQError.message("图片菜单参数无效")
+            }
+            web.prepareImageMenu(at:NSPoint(x:x,y:y),token:token,actions:items)
+            done()
+        case "exportImage","copyImage":
+            guard let url = URL(string:args["url"] as? String ?? "") else { throw URLError(.badURL) }
+            let (bytes,mime) = try AssetHandler.image(url,workspace:workspace)
+            let ext = url.pathExtension
+            let type = UTType(filenameExtension:ext) ?? UTType(mimeType:mime) ?? .image
+            if method == "copyImage" {
+                let item = AssetHandler.clipboardItem(bytes,type:type)
+                let board = NSPasteboard.general
+                board.clearContents()
+                guard board.writeObjects([item]) else { throw SQError.message("无法将图片写入剪贴板") }
+                done(); return
+            }
+            guard let file = selectSave(url.lastPathComponent,type) else { done(cancelled); return }
+            try bytes.write(to:file,options:.atomic)
             done()
         case "copyText": NSPasteboard.general.clearContents();done(NSPasteboard.general.setString(args["text"] as? String ?? "",forType:.string))
         case "saveAs":

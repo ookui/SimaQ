@@ -1296,6 +1296,21 @@
       return true;
     });
   }
+  let pendingImageMenu = null;
+  let imageMenuSerial = 0;
+  function prepareImageMenu(tab,point,image,items,useNative) {
+    const url = image.currentSrc || image.src;
+    if (url.startsWith('simaq-asset://workspace/')) {
+      items.unshift(['复制图片', () => rpc('copyImage',{url})], ['导出图片…', () => rpc('exportImage',{url})]);
+    }
+    if (!useNative) { menu(point,items); return; }
+    const token = String(++imageMenuSerial);
+    pendingImageMenu = {token,tab,image,items};
+    call(() => rpc('prepareImageMenu',{
+      ...point,token,items:items.map(([label,,icon]) =>
+        ({title:window.SimaSettings.menuText(label),checked:icon==='check',copyFallback:label==='复制图片'}))
+    }));
+  }
   async function imageAsset(t, file) {
     const data = await new Promise((resolve, reject) => {
       const r = new FileReader();
@@ -1327,6 +1342,7 @@
         onOutlineChange: () => { if (active === t) scheduleOutline(true); },
         isSearchActive: () => mode === 'search',
         onLink: (link, options) => call(() => followLink(t, link, options)),
+        onImageMenu: (point,image,items,useNative) => prepareImageMenu(t,point,image,items,useNative),
         onAsset: isMd(t.path) ? (file) => imageAsset(t, file) : undefined,
       });
       if (Object.keys(t.state || {}).length) t.editor.setState(t.state);
@@ -1456,6 +1472,7 @@
     persistSoon();
   }
   async function disposeTab(t) {
+    if (pendingImageMenu?.tab === t) pendingImageMenu = null;
     stopTimers(t);
     await t.work.catch(() => {});
     t.referenceObserver?.disconnect();
@@ -2402,6 +2419,13 @@
       }), 165);
   }
   async function event(name, data = {}) {
+    if (name === 'imageMenuAction') {
+      const context = pendingImageMenu;
+      if (context?.token !== data.token) return;
+      pendingImageMenu = null;
+      if (context.tab === active && context.image.isConnected) call(context.items[data.index]?.[1]);
+      return;
+    }
     if (name === 'workspaceOpened') return loadWorkspace(data);
     if (name === 'openPath') {
       return data.newTab === undefined

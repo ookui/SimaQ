@@ -32,6 +32,74 @@
     const url = global.assetURL(direct);
     return fallback && fallback !== direct ? url + '?fallback=' + encodeURIComponent(fallback) : url;
   }
+  // Give standard destinations, titles and reference images first choice.
+  const standardImage = md.inline.ruler.__rules__.find(rule => rule.name === 'image').fn;
+  function spacedImage(state, silent) {
+    const {src, pos, posMax} = state;
+    if (!src.startsWith('![', pos)) return false;
+    const labelEnd = md.helpers.parseLinkLabel(state, pos + 1, false);
+    if (labelEnd < 0 || src[labelEnd + 1] !== '(') return false;
+    const start = labelEnd + 2;
+    let depth = 0, end = start, title;
+    for (; end < posMax; end++) {
+      const ch = src[end];
+      if (/[\r\n<>]/.test(ch)) return false;
+      if (ch === '\\') { end++; continue; }
+      if (ch === ' ' && /["']/.test(src[end + 1] || ' ')) {
+        const parsed = md.helpers.parseLinkTitle(src, end + 1, posMax);
+        if (parsed.ok && src[parsed.pos] === ')') { title = parsed; break; }
+      }
+      if (ch === '(') depth++;
+      if (ch === ')' && depth-- === 0) break;
+    }
+    if (end >= posMax) return false;
+    const path = src.slice(start, end).trim();
+    if (!path.includes(' ') || /^(?:[a-z][\w+.-]*:|\/\/)/i.test(path) ||
+        !/\.[a-z\d]+(?:[?#].*)?$/i.test(path)) return false;
+    const href = md.normalizeLink(md.utils.unescapeAll(path));
+    if (!md.validateLink(href)) return false;
+    if (!silent) {
+      const label = src.slice(pos + 2, labelEnd), children = [];
+      md.inline.parse(label, md, state.env, children);
+      const token = state.push('image', 'img', 0);
+      token.attrs = [['src', href], ['alt', '']];
+      token.content = label;
+      token.children = children;
+      if (title) token.attrSet('title', title.str);
+    }
+    state.pos = (title?.pos ?? end) + 1;
+    return true;
+  }
+  // A width followed by an optional alignment, both local to this image occurrence.
+  const imageLayout = /^(?:\{width=([1-9]\d{0,4})\})?(?:\{align=(left|center|right)\})?/;
+  md.inline.ruler.at('image', (state, silent) => {
+    if (!standardImage(state, silent) && !spacedImage(state, silent)) return false;
+    const end = state.pos;
+    const layout = state.src[end] === '{' && imageLayout.exec(state.src.slice(end, state.posMax));
+    if (layout) state.pos += layout[0].length;
+    if (!silent) {
+      const token = state.tokens.at(-1);
+      if (layout?.[1]) token.attrSet('width', layout[1]);
+      token.meta = {align:layout?.[2],imageEnd:state.env.editableImages ? end : undefined};
+    }
+    return true;
+  });
+  // Inline offsets omit quote/list prefixes. Map the insertion point to the original line.
+  md.core.ruler.after('inline', 'image_positions', state => {
+    if (!state.env.editableImages) return;
+    const lines = state.src.split('\n'), starts = [0];
+    for (const line of lines) starts.push(starts.at(-1) + line.length + 1);
+    for (const token of state.tokens) {
+      if (!token.map || !token.children) continue;
+      for (const image of token.children) {
+        if (image.meta?.imageEnd == null) continue;
+        const prefix = token.content.slice(0, image.meta.imageEnd).split('\n');
+        const row = token.map[0] + prefix.length - 1;
+        const column = lines[row]?.indexOf(token.content.split('\n')[prefix.length - 1]);
+        if (column >= 0) image.meta.offset = starts[row] + column + prefix.at(-1).length;
+      }
+    }
+  });
   const imageRule = md.renderer.rules.image;
   md.renderer.rules.image = (tokens, idx, opts, env, self) => {
     const token = tokens[idx], src = token.attrGet('src') || '';
@@ -41,7 +109,15 @@
       token.attrSet('data-markdown-src', src);
       token.attrSet('src', imageURL(src,env.path || ''));
     }
-    return imageRule(tokens,idx,opts,env,self);
+    let html = imageRule(tokens,idx,opts,env,self);
+    if (token.meta?.offset != null && token.attrGet('src')) {
+      const hint = '拖动调整图片宽度，双击恢复原尺寸';
+      html = '<span class="sima-sized-image">' + html + '<button type="button" class="sima-image-grip" data-offset="' +
+        token.meta.offset + '" title="' + hint + '" aria-label="' + hint + '">↔</button></span>';
+    }
+    const align = token.meta?.align;
+    return align ? '<span data-image-align="' + align + '" style="display:flex;justify-content:' +
+      ({left:'flex-start',center:'center',right:'flex-end'})[align] + '">' + html + '</span>' : html;
   };
   md.inline.ruler.before('link','wiki',function(state,silent) {
     const rest=state.src.slice(state.pos), m=/^\[\[([^\]\n]+)\]\]/.exec(rest);
@@ -323,5 +399,5 @@
     await enhanceDiagrams(doc);
     return '<!doctype html>\n'+doc.documentElement.outerHTML;
   }
-  global.SimaRender={imageURL,parse,renderBlock,inline,render,referenceExcerpt,exportHTML:exportWithDiagrams,exportWithDiagrams};
+  global.SimaRender={imageURL,imageLayout,parse,renderBlock,inline,render,referenceExcerpt,exportHTML:exportWithDiagrams,exportWithDiagrams};
 })(globalThis);

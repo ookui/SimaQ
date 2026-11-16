@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import WebKit
 import UniformTypeIdentifiers
 
@@ -17,6 +17,15 @@ final class AssetHandler: NSObject, WKURLSchemeHandler {
         let type = UTType(filenameExtension:ext)
         guard let mime = imageTypes[ext] ?? (type?.conforms(to:.image) == true ? type?.preferredMIMEType : nil) else { throw URLError(.unsupportedURL) }
         return (try Data(contentsOf:file,options:.mappedIfSafe), mime)
+    }
+    static func clipboardItem(_ bytes: Data, type: UTType) -> NSPasteboardItem {
+        let item = NSPasteboardItem()
+        item.setData(bytes,forType:NSPasteboard.PasteboardType(type.identifier))
+        // Offer the original encoding as well as a bitmap for apps that only paste TIFF.
+        if type != .tiff, let tiff = NSImage(data:bytes)?.tiffRepresentation {
+            item.setData(tiff,forType:.tiff)
+        }
+        return item
     }
     static func embedImages(_ html: String, workspace: Workspace) throws -> String {
         let attribute = try NSRegularExpression(pattern: #"(?i)(<img\s+[^>]*?\bsrc\s*=\s*["'])(simaq-asset://[^"']+)(["'])"#)
