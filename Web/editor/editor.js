@@ -20,13 +20,13 @@
     return {from, oldEnd, inserted:after.slice(from, newEnd)};
   }
   function create(host, options = {}) {
-    let text = String(options.text ?? ''), source = !!options.literal, yamlCollapsed = options.settings?.yamlCollapsed !== false;
+    let text = String(options.text ?? ''), source = !!options.literal, yamlCollapsed = options.settings?.autoHideYaml !== false;
+    const folderName = (options.path?.split('/').at(-2) || options.workspaceName || '').toLowerCase();
     let focusMode = false, typewriter = false, selection = {anchor:0, head:0};
     let blocks = [], active = null, activeTable = null, field = null, mirror = null;
     let chooser = null, outlineJump = null;
     let composing = false, destroyed = false, pendingActions = [], pendingScroll = null;
     let tableWidths = [];
-    let foldedHeadings = new Set();
     let hits = [], currentHit = null, beforeSelection = null;
     const undo = [], redo = [], pendingAssets = new Set();
     const viewport = element('div','sima-editor cm-editor'), doc = element('article','sima-document');
@@ -38,29 +38,7 @@
     const renderOptions = {path:options.path || ''};
     const events = new AbortController();
     function on(target, name, fn, extra = {}) {target.addEventListener(name, fn, {...extra,signal:events.signal});}
-    let refreshPreview, previewURL, previewTimer;
-    if (options.literal && /\.svg$/i.test(options.path)) {
-      const preview=element('details','sima-svg-preview'), summary=document.createElement('summary');
-      const picture=document.createElement('img');
-      summary.dataset.menuText='SVG 预览';
-      summary.textContent=window.SimaSettings.menuText(summary.dataset.menuText);
-      picture.alt=options.path;
-      preview.append(summary,picture);
-      viewport.prepend(preview);
-      preview.open=true;
-      function updatePicture() {
-        if (!preview.open) return;
-        const previous=previewURL;
-        previewURL=URL.createObjectURL(new Blob([text],{type:'image/svg+xml;charset=utf-8'}));
-        picture.src=previewURL;
-        if (previous) URL.revokeObjectURL(previous);
-      }
-      refreshPreview=()=>{
-        clearTimeout(previewTimer);
-        previewTimer=setTimeout(updatePicture,180);
-      };
-      on(preview,'toggle',refreshPreview);
-    }
+    let filePreview;
     const detachScrollbar = window.SimaScrollbar.attach(viewport);
     const range = () => [Math.min(selection.anchor,selection.head),Math.max(selection.anchor,selection.head)];
     function pick(a,b=a) {selection={anchor:clamp(a,0,text.length),head:clamp(b,0,text.length)};}
@@ -81,7 +59,7 @@
       text=text.slice(0,from)+inserted+text.slice(to);
       pick(after.anchor,after.head);
       hits=[];currentHit=null;
-      refreshPreview?.();
+      filePreview?.refresh();
       mathView?.schedule(120);
       options.onChange?.();
     }
@@ -160,13 +138,33 @@
           intervals.push([m.index,m.index+token.length,'sima-token-'+cls]);
         }
       }
+      if (options.literal && /\.json$/i.test(options.path)) {
+        const tokens=/"(?:\\[\s\S]|[^"\\])*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null/g;
+        for (const token of raw.matchAll(tokens)) {
+          const string=token[0].startsWith('"');
+          const key=string && /^\s*:/.test(raw.slice(token.index+token[0].length));
+          const type=key?'key':string?'string':/^[tnf]/.test(token[0])?'literal':'number';
+          intervals.push([token.index,token.index+token[0].length,'sima-token-json-'+type]);
+        }
+      }
       for(const hit of hits) if(hit.start<active.end && hit.start+hit.length>active.start) {
         intervals.push([Math.max(0,hit.start-active.start),Math.min(raw.length,hit.start+hit.length-active.start),sameHit(hit,currentHit)?'md-search-select':'md-search-hit']);
       }
       const cuts=[...new Set([0,raw.length,...intervals.flatMap(([a,b])=>[a,b])])].sort((a,b)=>a-b);
+      const starts=new Map(),ends=new Map(),visible=new Set();
+      for(const interval of intervals){
+        const [a,b]=interval;
+        if(a>=b)continue;
+        if(!starts.has(a))starts.set(a,[]);
+        if(!ends.has(b))ends.set(b,[]);
+        starts.get(a).push(interval);ends.get(b).push(interval);
+      }
       let html='';
       for(let i=1;i<cuts.length;i++){
-        const a=cuts[i-1],b=cuts[i],cls=intervals.filter(([l,r])=>a>=l&&b<=r).map(v=>v[2]).join(' ');
+        const a=cuts[i-1],b=cuts[i];
+        for(const interval of ends.get(a)||[])visible.delete(interval);
+        for(const interval of starts.get(a)||[])visible.add(interval);
+        const cls=[...visible].map(v=>v[2]).join(' ');
         const content=escape(normalize(raw.slice(a,b)));
         html+=cls?'<span class="'+cls+'">'+content+'</span>':content;
       }
@@ -219,81 +217,28 @@
       const button=element('button','sima-yaml-toggle');button.type='button';
       button.setAttribute('aria-label','YAML');
       if (preview) {
-        button.onmouseenter=()=>{
-          if (yamlCollapsed) {
-            preview.hidden=false;
-            button.setAttribute('aria-expanded','true');
-          }
+        const show = visible => {
+          if (!yamlCollapsed) return;
+          preview.hidden = !visible;
+          button.setAttribute('aria-expanded', String(visible));
         };
-        button.onmouseleave=()=>{
-          if (yamlCollapsed) {
-            preview.hidden=true;
-            button.setAttribute('aria-expanded','false');
-          }
-        };
+        b.node.onmouseenter = () => show(true);
+        b.node.onmouseleave = () => show(false);
+      } else {
+        b.node.onmouseenter = b.node.onmouseleave = null;
       }
-      button.setAttribute('aria-expanded',String(!yamlCollapsed));
+      button.setAttribute('aria-expanded',String(!preview || !yamlCollapsed));
       button.addEventListener('click',e=>{e.stopPropagation();action('view.yaml');});
       b.node.append(button);
-    }
-    function applyFolds(target) {
-      const parents = [];
-      if (target) {
-        for (const b of blocks) {
-          while (b.level && parents.length && parents.at(-1).level >= b.level) parents.pop();
-          if (b === target) {
-            for (const parent of parents) foldedHeadings.delete(parent.anchor);
-            break;
-          }
-          if (b.level) parents.push(b);
-        }
-      }
-      let hiddenBelow = 0;
-      for (const b of blocks) {
-        if (b.level && b.level <= hiddenBelow) hiddenBelow = 0;
-        b.node.hidden = !!hiddenBelow;
-        if (!b.level) continue;
-        const collapsed = foldedHeadings.has(b.anchor);
-        const button = b.node.querySelector('.sima-fold');
-        if (button) {
-          button.textContent = collapsed ? '▸' : '▾';
-          button.setAttribute('aria-expanded', String(!collapsed));
-          button.setAttribute('aria-label', (collapsed ? '展开' : '折叠') + '章节 ' + b.anchor);
-        }
-        if (collapsed && !hiddenBelow) hiddenBelow = b.level;
-      }
     }
     // Extend the scroll range only when a heading near the document end needs it.
     function positionHeading(rect, viewportY) {
       const desired = viewport.scrollTop + rect.top - viewportY;
       const missing = Math.ceil(desired + viewport.clientHeight - viewport.scrollHeight);
-      if (missing > 0) viewport.style.setProperty('--fold-tail',missing+'px');
+      if (missing > 0) viewport.style.setProperty('--outline-tail',missing+'px');
       viewport.scrollTop = Math.max(0,desired);
     }
     function drawBlock(b) {
-      if (b.level) {
-        const button = element('button','sima-fold');
-        button.type = 'button';
-        button.onclick = e => {
-          e.stopPropagation();
-          if (composing) return;
-          const top = b.node.getBoundingClientRect().top;
-          pick(b.start);
-          // End a live edit before hiding it. Reading-mode folds keep their existing DOM.
-          if (active || activeTable) draw(false);
-          const heading = blockAt(b.start);
-          if (!heading?.level) return;
-          if (foldedHeadings.has(heading.anchor)) foldedHeadings.delete(heading.anchor);
-          else foldedHeadings.add(heading.anchor);
-          applyFolds();
-          viewport.style.removeProperty('--fold-tail');
-          positionHeading(heading.node.getBoundingClientRect(),top);
-          heading.node.querySelector('.sima-fold').focus({preventScroll:true});
-          options.onOutlineChange?.();
-          options.onViewChange?.();
-        };
-        b.node.append(button);
-      }
       const raw=text.slice(b.start,b.end);
       if (b.type==='yaml') {
         const preview=element('pre','md-meta-block');
@@ -318,6 +263,26 @@
         });
       } else b.node.insertAdjacentHTML('beforeend',window.SimaRender.renderBlock({...b,source:raw}, {...renderOptions,editableImages:true}));
     }
+    // Keep the Markdown blocks themselves intact for caret mapping and live table controls.
+    function layoutPageHeader(parent) {
+      const title = parseBlocks().find(b => b.documentTitle);
+      const titleIndex = title ? blocks.findIndex(b => b.start === title.start && b.type === 'heading') : -1;
+      const oldHeader = parent.querySelector('.sima-page-header');
+      if (oldHeader) {
+        const previousBlocks = oldHeader.querySelectorAll(':scope > .sima-block');
+        if (titleIndex >= 0 && previousBlocks[previousBlocks.length - 1] === blocks[titleIndex].node) return;
+        oldHeader.replaceWith(...previousBlocks);
+      }
+      if (titleIndex < 0) return;
+      const header = element('header','sima-page-header');
+      blocks[0].node.before(header);
+      for (const b of blocks.slice(0, titleIndex + 1)) header.append(b.node);
+      if (folderName) {
+        const tag = element('span','sima-folder-tag');
+        tag.textContent = '# ' + folderName;
+        header.append(tag);
+      }
+    }
     function finishBlock() {
       // Only replace the text field leaving focus. Other live controls retain their DOM.
       const prev=active;if(!prev)return;
@@ -327,7 +292,9 @@
       const index=blocks.indexOf(prev);
       const fragment=document.createDocumentFragment();
       for(const b of freshly){fragment.append(makeBlock(b));drawBlock(b);}
-      prev.node.replaceWith(fragment);blocks.splice(index,1,...freshly);mathView?.schedule();applyFolds();options.onOutlineChange?.();
+      prev.node.replaceWith(fragment);blocks.splice(index,1,...freshly);
+      if (prev.source !== text.slice(prev.start,prev.end)) layoutPageHeader(doc);
+      mathView?.schedule();options.onOutlineChange?.();
     }
     function draw(edit, focus=false, preferTable=true) {
       outlineJump=null;
@@ -354,12 +321,12 @@
       for(const b of blocks) {
         fragment.append(makeBlock(b));
         if(b===target && (b.type!=='table'||!preferTable)) {
-          if(b.type==='yaml'){yamlCollapsed=false;yamlButton(b);}
+          if(b.type==='yaml')yamlButton(b);
           fieldBlock(b,false);
         } else drawBlock(b);
       }
+      layoutPageHeader(fragment);
       doc.replaceChildren(fragment);
-      applyFolds(target);
       if(target?.table && focus) {
         const inside=target.table.focusAt(desired.anchor-target.start,desired.head-target.start);
         if(!inside) {pick(desired.anchor,desired.head);draw(true,focus,false);return;}
@@ -553,11 +520,9 @@
       if (active || activeTable || doc.querySelector('.editing')) draw(false);
       const target=hit && blockAt(selection.anchor);
       if (target?.type==='yaml' && yamlCollapsed) {
-        yamlCollapsed=false;
-        target.node.replaceChildren();
-        drawBlock(target);
+        target.node.querySelector('.md-meta-block').hidden=false;
+        target.node.querySelector('.sima-yaml-toggle').setAttribute('aria-expanded','true');
       }
-      if (target) { applyFolds(target);options.onOutlineChange?.(); }
       setHighlights(ranges,hit);
       if (target) {
         const mark=target.node.querySelector('mark.md-search-select');
@@ -591,14 +556,14 @@
         if (active?.type==='selection' && h.start>=active.start && h.start<=active.end) return [h];
         if (!block) return [];
         const heading=block.querySelector('h1,h2,h3,h4,h5,h6');
-        return [{...h,title:heading?.textContent || h.title,node:heading || block,hidden:block.hidden}];
+        return [{...h,title:heading?.textContent || h.title,node:heading || block}];
       });
     }
     function goToHeading(start) {
       if(composing) { pendingActions.push(()=>goToHeading(start)); return; }
       pick(start);
       let rect;
-      viewport.style.removeProperty('--fold-tail');
+      viewport.style.removeProperty('--outline-tail');
       if(source) {
         placeField(true);
         rect=caretRect(start);
@@ -606,7 +571,6 @@
         if(active || activeTable || doc.querySelector('.editing')) draw(false);
         const target=blockAt(start);
         if (!target) return;
-        applyFolds(target);
         const heading=target.node.querySelector('h1,h2,h3,h4,h5,h6');
         rect=(heading || target.node).getBoundingClientRect();
       }
@@ -695,10 +659,10 @@
       if(id==='edit.undo'||id==='edit.redo')return history(id==='edit.redo');
       if(options.literal && !['edit.selectAll','edit.copy','edit.cut','edit.paste','insertText'].includes(id))return false;
       if(id==='view.source') {
-        const reading=viewportAnchor();source=!source;viewport.style.removeProperty('--fold-tail');draw(true,true);restoreAnchor(reading);return true;
+        const reading=viewportAnchor();source=!source;viewport.style.removeProperty('--outline-tail');draw(true,true);restoreAnchor(reading);return true;
       }
       if(id==='view.yaml'){
-        yamlCollapsed=!yamlCollapsed;
+        yamlCollapsed=active?.type==='yaml' || !yamlCollapsed;
         if(!source) {
           const y=blocks.find(b=>b.type==='yaml');
           if(y) {
@@ -735,24 +699,22 @@
     const visibility=new MutationObserver(syncVisible);visibility.observe(host,{attributes:true,attributeFilter:['hidden']});
     function getState() {
       readSelection();
-      return {selection:{...selection},reading:!active && !activeTable,source,yamlCollapsed,focusMode,typewriter,foldedHeadings:[...foldedHeadings],tableWidths:tableWidths.map(w=>w&&[...w]),scrollTop:pendingScroll??viewport.scrollTop};
+      return {selection:{...selection},reading:!active && !activeTable,source,yamlPinned:!yamlCollapsed,focusMode,typewriter,tableWidths:tableWidths.map(w=>w&&[...w]),scrollTop:pendingScroll??viewport.scrollTop};
     }
     function setState(state={}) {
-      foldedHeadings = new Set(Array.isArray(state.foldedHeadings) ? state.foldedHeadings : []);
       tableWidths=Array.isArray(state.tableWidths)?state.tableWidths.map(w=>Array.isArray(w)?w.slice():[]):[];
-      source=!!options.literal || !!state.source;yamlCollapsed=state.yamlCollapsed??yamlCollapsed;focusMode=!!state.focusMode;typewriter=!!state.typewriter;
+      source=!!options.literal || !!state.source;yamlCollapsed=!(state.yamlPinned ?? (options.settings?.autoHideYaml === false));focusMode=!!state.focusMode;typewriter=!!state.typewriter;
       const s=state.selection?.ranges?.[0] || state.selection || {};
       pick(s.anchor??s.from??0,s.head??s.to??s.anchor??0);
       const parsed=source ? [] : unpack();
       const isYaml=parsed.find(b=>b.type==='yaml' && selection.head>=b.start && selection.head<=b.end);
-      const foldedTitle = parsed.some(b=>b.start === selection.head && foldedHeadings.has(b.anchor));
-      const edit=source || !state.reading && !!(selection.anchor || selection.head) && !(isYaml && yamlCollapsed) && !foldedTitle;
+      const edit=source || !state.reading && !!(selection.anchor || selection.head) && !(isYaml && yamlCollapsed);
       draw(edit,false);
       pendingScroll=Number(state.scrollTop)||0;syncVisible();
     }
     function setText(next) {
       text=String(next??'');undo.length=redo.length=0;hits=[];currentHit=null;
-      pick(selection.anchor,selection.head);draw(false,false);refreshPreview?.();
+      pick(selection.anchor,selection.head);draw(false,false);filePreview?.refresh();
     }
     function rangeAtPoint(x,y) {
       const range=document.caretRangeFromPoint?.(x,y);
@@ -780,7 +742,7 @@
         pick(anchor,head);
         outlineJump=null;
         b.node.replaceChildren();
-        if(b.type==='yaml'){yamlCollapsed=false;yamlButton(b);}
+        if(b.type==='yaml')yamlButton(b);
         fieldBlock(b,true);
         if(previous && hits.length) highlightRendered();
         options.onOutlineChange?.();
@@ -1053,6 +1015,10 @@
     });
     on(doc,'focusout',e=>{if(e.target.matches('.sima-table-cell-input')) mathView?.schedule();});
     draw(false);syncVisible();
+    if (options.literal) filePreview = window.SimaFilePreview?.mount(viewport, {
+      path:options.path, getText:()=>text, locate,
+      replace:next=>replace(0,text.length,next,0)
+    });
     return {getText:()=>text,setText,getState,setState,focus,locate,outlineLocations,centeredHeading,goToHeading,showSearchResult,action,setHighlights,
       refreshImages(){
         for (const img of doc.querySelectorAll('img[data-markdown-src]')) {
@@ -1060,7 +1026,7 @@
         }
       },
       html:()=>options.literal ? '<pre>'+escape(text)+'</pre>' : window.SimaRender.exportWithDiagrams(text,renderOptions),
-      destroy(){destroyed=true;mathView?.destroy();detachScrollbar();clearTimeout(previewTimer);if(previewURL)URL.revokeObjectURL(previewURL);events.abort();visibility.disconnect();for(const b of blocks)b.table?.destroy();host.replaceChildren();}
+      destroy(){destroyed=true;mathView?.destroy();detachScrollbar();filePreview?.destroy();events.abort();visibility.disconnect();for(const b of blocks)b.table?.destroy();host.replaceChildren();}
     };
   }
   window.SimaEditor={create};

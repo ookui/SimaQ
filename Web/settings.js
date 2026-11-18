@@ -4,8 +4,9 @@
   const scriptBase = typeof document !== 'undefined' ? new URL('.', document.currentScript?.src || location.href).href : '';
   const defaults = {
     menuLanguage: 'system', appearance: 'system', lightTheme: 'Tana Light', darkTheme: 'Neutral Dark',
-    typography: {}, bindings: {}, userCSS: '', yamlCollapsed: true,
+    typography: {}, bindings: {}, userCSS: '', autoHideYaml: true,
     attachmentFolder: 'attachments', attachmentPath: 'relative',
+    mouseScrollSpeed: 1.5, trackpadScrollSpeed: 1,
   };
   const commandRows = [
     ['app.settings','设置…','应用','Cmd+,'], ['app.palette','命令面板…','应用','Cmd+Shift+P'],
@@ -29,6 +30,7 @@
     ['table.moveRowUp','上移一行','表格',''], ['table.moveRowDown','下移一行','表格',''], ['table.moveColumnLeft','左移一列','表格',''], ['table.moveColumnRight','右移一列','表格',''],
     ['table.alignLeft','列左对齐','表格',''], ['table.alignCenter','列居中','表格',''], ['table.alignRight','列右对齐','表格',''],
     ['view.source','切换源码模式','视图','Cmd+/'], ['view.outline','显示大纲','视图','Cmd+Shift+O'], ['view.sidebar','显示侧栏','视图','Cmd+\\'],
+    ['view.scrollSpeed','滚动速度…','视图',''],
     ['view.focus','专注模式','视图',''], ['view.typewriter','打字机模式','视图',''], ['view.yaml','折叠／展开元数据','视图','Cmd+Alt+Y'],
     ['navigate.backlinks','查看反向链接','导航',''], ['navigate.repair','修复失效链接…','导航',''],
     ['navigate.back','后退','导航','Cmd+['], ['navigate.forward','前进','导航','Cmd+]'],
@@ -160,7 +162,7 @@
       if(variable&&value!==''&&value!==null) declarations.push(variable+':'+String(value).replace(/[;}]/g,'')+';');
     }
     style('sima-user-preferences').textContent=':root{'+declarations.join('')+'}\n'+(settings.userCSS||'');
-    document.documentElement.dataset.yamlDefault=settings.yamlCollapsed?'collapsed':'expanded';
+    document.documentElement.dataset.yamlDefault=settings.autoHideYaml?'collapsed':'expanded';
     // Keep user preferences after the active theme in cascade order.
     document.head.append(document.getElementById('sima-user-preferences'));
     document.dispatchEvent(new CustomEvent('sima:preferences',{detail:settings}));
@@ -183,6 +185,7 @@
       return persist();
     }
     if(id==='app.palette')return palette();
+    if(id==='view.scrollSpeed') { const panel=modal(menuText('滚动速度'));scrollUI(panel);return; }
     if(id==='template.create'||id==='template.insert')return template(id.split('.')[1]);
     if(id.startsWith('theme.')) {settings.appearance=id.slice(6);await applyTheme();return persist();}
     try{return await host?.run?.(id,arg);}catch(e){error(e);throw e;}
@@ -200,6 +203,7 @@
     if(!dialog)return;dialog.remove();dialog=null;recording=null;global.SimaShell?.overlay?.(false);lastFocus?.focus?.();
   }
   function modal(title,wide=false) {
+    document.dispatchEvent(new Event('sima:modal-opening'));
     close();lastFocus=document.activeElement;global.SimaShell?.overlay?.(true);
     const panel=el('section',{class:'sq-dialog'+(wide?' sq-wide':''),role:'dialog','aria-modal':'true','aria-label':title,tabindex:'-1'});
     const backdrop=el('div',{class:'sq-backdrop',onmousedown:e=>{if(e.target===backdrop)close();}},[panel]);
@@ -237,6 +241,22 @@
     });
     control.dataset.languagePicker = '';
     main.append(section(menuText('常规'),[row(menuText('菜单语言'),control)]));
+    scrollUI(main);
+  }
+  function scrollUI(main) {
+    const choices = [.5,.75,1,1.25,1.5,2,3].map(n=>[String(n), n+'×']);
+    const fields = [['mouseScrollSpeed','鼠标滚轮'],['trackpadScrollSpeed','触控板']].map(([key,title])=>{
+      const control = select(String(settings[key]), choices, async value=>{
+        const previous=settings[key];settings[key]=Number(value);
+        try { await rpc('setPrefs',{prefs:settings}); }
+        catch(e) { settings[key]=previous;control.value=String(previous);error(e); }
+      });
+      control.dataset.scrollSpeed=key;
+      return row(menuText(title),control);
+    });
+    main.append(section(menuText('滚动速度'),[
+      ...fields, el('p',{class:'sq-hint',text:menuText('立即生效并保存。1× 为系统速度；适用于侧栏、正文与预览。')})
+    ]));
   }
   function appearanceUI(main) {
     main.append(section('外观与 CSS 主题',[
@@ -262,7 +282,7 @@
   }
   function appearanceUIRefresh(main){main.replaceChildren();appearanceUI(main);}
   function editorUI(main){
-    const collapse=el('input',{type:'checkbox',checked:settings.yamlCollapsed,onchange:()=>{settings.yamlCollapsed=collapse.checked;changed();}});
+    const collapse=el('input',{type:'checkbox',checked:settings.autoHideYaml,onchange:()=>{settings.autoHideYaml=collapse.checked;changed();}});
     main.append(section('编辑与阅读',[row('默认折叠 YAML 元数据',collapse)]));
     main.append(section('写作视图',[el('div',{class:'sq-actions'},['view.source','view.outline','view.focus','view.typewriter','view.yaml'].map(id=>button(commands.find(c=>c.id===id).label,()=>{close();execute(id);}))) ]));
   }
@@ -356,6 +376,9 @@
     host=options;
     try{const saved=await rpc('getPrefs');if(saved&&typeof saved==='object')Object.assign(settings,saved,{typography:{...saved.typography},bindings:{...saved.bindings}});}catch(e){error(e);}
     if (!['system',...languages].includes(settings.menuLanguage)) settings.menuLanguage='system';
+    for(const key of ['mouseScrollSpeed','trackpadScrollSpeed']) {
+      if(![.5,.75,1,1.25,1.5,2,3].includes(settings[key]))settings[key]=defaults[key];
+    }
     await refreshMenuLanguage();await reloadThemes();system.addEventListener('change',()=>{if(settings.appearance==='system')applyTheme();});
 
     return api;

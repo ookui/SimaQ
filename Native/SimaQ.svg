@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>SimaQ</title>
+  <defs>
+    <linearGradient id="porcelain" x2="0" y2="1" gradientUnits="objectBoundingBox">
+      <stop stop-color="#F3EEE8"/>
+      <stop offset="1" stop-color="#E7E1D9"/>
+    </linearGradient>
+  </defs>
+  <rect x="100" y="96" width="824" height="832" rx="205" fill="url(#porcelain)"
+        stroke="#DDD7D0" stroke-width="1"/>
+  <path fill="#263840" fill-rule="evenodd"
+        d="M510 251a254 257 0 1 1 0 514 254 257 0 1 1 0-514z
+           M510 336a163 170 0 1 0 0 340 163 170 0 1 0 0-340z"/>
+  <path fill="#CE593F" d="M582 685h102l72 92H653z"/>
+</svg>

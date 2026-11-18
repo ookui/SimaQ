@@ -7,10 +7,51 @@ const note = '公司/富瀚微.md', report = '报告/视觉 产业.html', pdf = 
 const state = () => rpc('bootstrap');
 const root = await state();
 ok(root.root && root.root.length>0,'工作区已打开');
+const treeRow = path => [...document.querySelectorAll('.tree-row')].find(row=>row.dataset.path===path);
+const expand = path => { if(treeRow(path)?.getAttribute('aria-expanded')==='false') treeRow(path).click(); };
+const activePath = () => document.querySelector('.tab[aria-selected="true"]')?.title;
+const tabCount = () => document.querySelectorAll('.tab').length;
+expand('专题');
+const topic = '专题/长文与标题定位.md';
+treeRow(topic).click();
+await wait(()=>activePath()===topic,'未打开专题笔记');
+expand('公司');
+const countBeforeReplace = tabCount();
+treeRow(note).click();
+await wait(()=>activePath()===note && tabCount()===countBeforeReplace,'普通点击未复用标签');
+expand('专题');
+treeRow(topic).dispatchEvent(new MouseEvent('click',{metaKey:true,bubbles:true}));
+await wait(()=>activePath()===topic && tabCount()===countBeforeReplace+1,'⌘ 点击未保留原标签');
+expand('报告');
+treeRow(report).dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true}));
+const newTabLabel = SimaSettings.menuText('在新标签页中打开');
+[...document.querySelectorAll('[role="menuitem"]')].find(item=>item.textContent===newTabLabel).click();
+await wait(()=>activePath()===report && tabCount()===countBeforeReplace+2,'右键菜单未打开新标签');
+ok(true,'左侧目录支持替换当前标签、⌘ 点击和右键新标签');
 await SimaShell.event('openPath',{path:note,newTab:true});
 await wait(()=>document.querySelector('.tab[aria-selected="true"]')?.title===note,'note did not open');
 ok(!!document.querySelector('#hosts .doc-host'),'目录中的 Markdown 进入真实编辑器');
 ok(!!document.querySelector('#hosts table'),'可视化管道表格已生成');
+const visibleHost = document.querySelector('#hosts .doc-host:not([hidden])');
+const header = visibleHost.querySelector('.sima-page-header');
+const metadata = header?.querySelector('.md-meta-block');
+ok(metadata?.hidden && getComputedStyle(metadata).fontStyle === 'italic' &&
+   header.querySelector('h1').textContent === '富瀚微','页首的斜体 YAML 默认收起');
+ok(header.querySelector('.sima-folder-tag')?.textContent === '# 公司','标题下显示直接父目录标签');
+const viewport = visibleHost.querySelector('.sima-editor');
+const surface = getComputedStyle(header,'::before');
+ok(Math.abs(parseFloat(surface.width) - viewport.clientWidth) <= 1 && surface.borderBottomWidth === '1px',
+   '页首背景和底部分隔线横跨整个编辑栏');
+const folderRow = document.querySelector('.tree-row[data-path="公司"]');
+ok(folderRow && getComputedStyle(folderRow).getPropertyValue('--directory-accent') ===
+   getComputedStyle(header).getPropertyValue('--directory-accent'),'目录图标和笔记页首共用主题色');
+await wait(()=>document.querySelectorAll('#outlineList .outline-row').length > 1,'大纲未显示');
+ok(!visibleHost.querySelector('.sima-fold') && document.querySelectorAll('#outlineList .outline-row').length > 1,
+   '章节全部展开，右侧保留多级大纲');
+const lastOutlineRow = document.querySelector('#outlineList .outline-row:last-child');
+lastOutlineRow.click();
+await wait(()=>lastOutlineRow.getAttribute('aria-current') === 'location','点击大纲未定位章节');
+ok(viewport.scrollTop > 0,'点击右侧大纲滚动到对应章节');
 const initial = await rpc('read',{path:note});
 await SimaShell.run('file.save');
 ok((await rpc('read',{path:note})).version===initial.version,'无编辑存储不改变文件散列');
@@ -24,8 +65,12 @@ const group=archive.closest('.search-file-group');
 ok(+group.querySelector('.group-count').textContent === (await rpc('read',{path:archive.title})).text.match(/physical[ _\-‑]+ai/gi).length,'归档文件栏显示全部正文命中');
 const second=group.querySelectorAll('.hit-row')[1];
 ok(second.classList.contains('hit-row') && second.innerText.includes('Physical‑AI'),'同名归档笔记第二处命中 Unicode 连字符');
-second.click();
+second.dispatchEvent(new MouseEvent('click',{bubbles:true,metaKey:true}));
 await wait(()=>document.querySelector('.tab[aria-selected="true"]')?.title.startsWith('归档/'),'archive hit did not open');
+const archiveHeader = document.querySelector('#hosts .doc-host:not([hidden]) .sima-page-header');
+ok(archiveHeader?.querySelector('.sima-folder-tag')?.textContent === '# 2025','多层目录使用最内层目录名');
+ok(archiveHeader && getComputedStyle(archiveHeader).getPropertyValue('--directory-accent') !==
+   getComputedStyle(header).getPropertyValue('--directory-accent'),'多级子目录的笔记采用所属大目录的独立配色');
 ok(document.querySelectorAll('.tab').length>=2,'两个标签同时保留');
 await SimaShell.event('openPath',{path:report,newTab:true});
 await wait(()=>document.querySelector('.tab[aria-selected="true"]')?.title===report,'html tab did not open');

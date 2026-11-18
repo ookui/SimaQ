@@ -4,23 +4,12 @@ import UniformTypeIdentifiers
 import CryptoKit
 
 private final class WorkspaceWindow: NSWindow {
-    var sidebarWidth: CGFloat = 0
-    private var gestureInSidebar = false
+    var scrollSpeed = ScrollSpeed()
 
     override func sendEvent(_ event: NSEvent) {
-        if event.type == .scrollWheel {
-            if event.momentumPhase.isEmpty {
-                if event.phase.contains(.began) || event.phase.isEmpty {
-                    let point = event.locationInWindow
-                    gestureInSidebar = point.x >= 0 && point.x < sidebarWidth && contentView?.frame.contains(point) == true
-                }
-            } else if gestureInSidebar {
-                // Forward direct movement and discrete wheel ticks. Stop the
-                // sidebar at finger lift without changing document scrolling.
-                return
-            }
-        }
-        super.sendEvent(event)
+        // WebKit needs the complete gesture, including momentum and end events.
+        // Apply speed once; never suppress a phase based on the pointer location.
+        super.sendEvent(scrollSpeed.applying(to:event))
     }
 }
 
@@ -68,6 +57,7 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigatio
         window.isReleasedWhenClosed = false
         window.minSize = NSSize(width:760,height:470)
         window.delegate = self
+        window.scrollSpeed = ScrollSpeed(data.read("preferences"))
         window.center()
         if isolatedHome == nil { window.setFrameAutosaveName("SimaQ main window") }
         updateTitle()
@@ -238,7 +228,6 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigatio
         let path = args["path"] as? String ?? ""
         let cancelled:JSONObject = ["cancelled":true]
         switch method {
-        case "sidebarWidth": window.sidebarWidth = CGFloat(args["width"] as? Double ?? 0); done()
         case "bootstrap": done(boot)
         case "chooseRoot","sampleRoot","openRecent":
             let selected:URL?
@@ -307,7 +296,11 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigatio
             search.whenReady { [weak self] in self?.send("indexReady",[:]) }
             done()
         case "getPrefs": done(data.read("preferences"))
-        case "setPrefs": try data.write("preferences",args["prefs"] as? JSONObject ?? [:]);done()
+        case "setPrefs":
+            let prefs = args["prefs"] as? JSONObject ?? [:]
+            try data.write("preferences",prefs)
+            window.scrollSpeed = ScrollSpeed(prefs)
+            done()
         case "systemMenuLanguage": done(ShellMenu.language(for:nil))
         case "menus": menus.install(args["commands"] as? [JSONObject] ?? [],language:ShellMenu.language(for:args["language"] as? String));done()
         case "builtinTheme":

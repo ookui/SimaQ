@@ -7,16 +7,6 @@
   outline: 0;
 }
 .sima-editor::-webkit-scrollbar { width: 0; }
-.sima-svg-preview {
-  margin: 14px auto 0;
-  max-width: var(--content-width, 54rem);
-  padding-inline: clamp(20px, 4vw, 48px);
-}
-.sima-svg-preview summary { color: var(--muted); cursor: pointer; font-size: 12px; }
-.sima-svg-preview img {
-  display: block; width: 100%; height: 26vh; object-fit: contain;
-  margin-top: 8px; border: 1px solid var(--border); border-radius: 6px;
-}
 .sima-document {
   box-sizing: border-box;
   width: 100%;
@@ -65,8 +55,76 @@
 }
 .sima-yaml-toggle:is(:hover,:focus-visible,[aria-expanded="true"])::before { background:var(--muted); }
 .sima-block .md-meta-block[hidden] { display:none !important; }
-.sima-editor::after { content:""; display:block; height:var(--fold-tail,0px); pointer-events:none; }
-.sima-block .md-meta-block { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: .6em .9em; margin: .4em 0; font: .88em/1.55 var(--monospace,ui-monospace,monospace); }
+.sima-editor::after { content:""; display:block; height:var(--outline-tail,0px); pointer-events:none; }
+/* The background follows the editor pane while text follows the reading column. */
+@media screen {
+  .sima-editor { container-type: inline-size; }
+  #write:has(> .sima-page-header:first-child) { padding-block-start: 0; }
+  .sima-page-header {
+    --header-accent: var(--directory-accent, var(--accent));
+    position: relative;
+    isolation: isolate;
+    padding-block: 1.25rem 1rem;
+    margin-block-end: .75rem;
+  }
+  .sima-page-header::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    pointer-events: none;
+    inset-block: 0;
+    inset-inline-start: 50%;
+    width: 100cqi;
+    transform: translateX(-50%);
+    background: radial-gradient(ellipse 54% 103% at 50% 0%,
+      color-mix(in srgb, var(--header-accent) 17%, var(--bg)),
+      color-mix(in srgb, var(--header-accent) 15%, var(--bg)) 24%,
+      color-mix(in srgb, var(--header-accent) 10%, var(--bg)) 51%,
+      color-mix(in srgb, var(--header-accent) 3%, var(--bg)) 82%,
+      var(--bg));
+    border-bottom: 1px solid var(--border);
+    --header-line-edge: color-mix(in srgb, var(--border) 45%, var(--bg));
+    border-image: linear-gradient(to right, var(--header-line-edge),
+      var(--border) 50%,
+      var(--header-line-edge)) 1;
+  }
+  #write .sima-page-header h1, #write .sima-page-header [data-kind="heading"] .sima-text-pair {
+    margin-block: 0;
+    line-height: 1.27;
+  }
+  .sima-page-header [data-kind="yaml"] { margin-bottom: .4rem; }
+  .sima-folder-tag {
+    display: inline-block;
+    max-width: 100%;
+    margin-top: .45rem;
+    padding: .08em .48em;
+    border-radius: .3em;
+    background: color-mix(in srgb, var(--header-accent) 11%, var(--bg));
+    color: color-mix(in srgb, var(--header-accent) 75%, var(--text));
+    font: 500 .83em/1.45 var(--body-font, system-ui);
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  :root[data-appearance="dark"] .sima-folder-tag {
+    color: color-mix(in srgb, var(--header-accent) 40%, white);
+  }
+  .sima-page-header [data-kind="blank"]:not(.sima-active-block) { min-height: 2px; }
+  #write [data-kind="yaml"] > :is(pre.md-meta-block, .sima-text-pair) {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font: italic max(10px, calc(.88em - 2px))/1.35 var(--monospace, ui-monospace, monospace);
+  }
+  #write [data-kind="yaml"] > .sima-yaml-toggle {
+    margin-inline: 0 auto;
+    justify-items: start;
+    width: 2rem;
+    height: 1rem;
+  }
+  #write [data-kind="yaml"]:not(:hover,:focus-within) > .sima-yaml-toggle[aria-expanded="true"] { opacity: 0; }
+}
 .sima-block .yaml-key { color: var(--yaml-key, var(--accent)); }
 .sima-block .yaml-value { color: var(--yaml-value, var(--muted)); }
 .sima-block .yaml-comment { color: var(--yaml-comment, var(--muted)); }
@@ -155,13 +213,6 @@
 .sima-block[data-paragraph-style="quote"] textarea { inset-inline-start: 1em; width: calc(100% - 1em); }
 .sima-block:is([data-paragraph-style="bullet"],[data-paragraph-style="task"],[data-paragraph-style="ordered"]) .sima-text-pair { margin-inline-start: .5em; }
 
-.sima-block[hidden] { display:none; }
-#workspaceShell .sima-block .sima-fold {
-  position:absolute; inset-inline-start:-1.45em; top:1em; width:1.4em;
-  padding:0; border:0; background:transparent; color:var(--muted);
-  font:13px/1.6 -apple-system,sans-serif; cursor:pointer;
-}
-.sima-fold:hover,.sima-fold:focus-visible { color:var(--accent); }
 .sima-references { max-width:var(--content-width); margin:0 auto; padding:0 clamp(20px,4vw,48px) 2rem; color:var(--text); font:var(--font-size)/1.5 var(--body-font); }
 .sima-references summary { border-top:1px solid var(--border); padding:.8em 0; cursor:pointer; font-weight:600; }
 .sima-references p { color:var(--muted); font-size:.9em; }

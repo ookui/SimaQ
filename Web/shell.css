@@ -254,7 +254,19 @@ span[data-icon] {
   display: inline-flex;
 }
 .tree-row .folder-icon {
-  color: var(--accent);
+  color: var(--directory-accent);
+  width: 19px;
+  height: 19px;
+  flex: 0 0 19px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--directory-accent) 11%, transparent);
+}
+.tree-row .folder-icon svg { width: 14px; height: 14px; }
+:root[data-appearance="dark"] .tree-row .folder-icon {
+  color: color-mix(in srgb, var(--directory-accent) 61%, white);
+  background: color-mix(in srgb, var(--directory-accent) 18%, transparent);
 }
 .tree-name {
   overflow: hidden;
@@ -760,7 +772,11 @@ kbd {
   position:absolute; inset-block:0; inset-inline-end:0; width:var(--outline-width);
   display:flex; flex-direction:column; background:color-mix(in srgb,var(--bg) 94%,var(--text)); border-inline-start:1px solid var(--border);
 }
-#outlineTitle { flex:none; margin:0; padding:16px 14px 9px; }
+#outlineTitle {
+  flex:none; margin:0; padding:16px 14px 9px;
+  font-size:14px; font-weight:650; line-height:1.35; letter-spacing:normal;
+  color:var(--text);
+}
 #outlineList { overflow:auto; overscroll-behavior:contain; min-height:0; padding:2px 10px 12px 7px; }
 #documentOutline .outline-row {
   min-height:27px; height:auto; padding-block:4px; line-height:1.45; font-size:12px;

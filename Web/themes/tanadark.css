@@ -146,55 +146,8 @@ body { font-family: var(--tana-sans); }
 
 /* The cyan nodes and blue-backed labels echo Tana's weekly goals view. */
 @media screen {
-    /* The first heading stays aligned with the body, including after front matter. */
-    #write > .sima-block[data-document-title] > h1 {
-        position: relative;
-        isolation: isolate;
-        padding: .42em 0 .48em;
-    }
-    #write > .sima-block[data-document-title] > h1::after {
-        content: "";
-        position: absolute;
-        inset: 0;
-        z-index: -1;
-        pointer-events: none;
-        background-image: radial-gradient(
-            ellipse farthest-corner at center,
-            #3b3026 10%,
-            rgba(59, 48, 38, .78) 50%,
-            rgba(59, 48, 38, .24) 79%,
-            rgba(59, 48, 38, 0) 100%
-        );
-        /* Soften the boundary without adding a separate surface or outline. */
-        mask-image:
-            linear-gradient(to right, transparent, black 10%, black 90%, transparent),
-            linear-gradient(to bottom, transparent, black 16%, black 84%, transparent);
-        mask-composite: intersect;
-    }
     #write h2 { color: #b6b5af; }
     #write strong { color: #b1b7bc; }
-    #write pre.md-meta-block {
-        margin-block-start: 0;
-        color: #7d8389;
-        background-color: #1b1d21;
-        border-color: #2b2e33;
-        font-size: .83rem;
-        font-style: italic;
-    }
-    /* Keep a small pointer target so the front matter can reopen. */
-    #write pre.md-meta-block:not(:hover) {
-        box-sizing: border-box;
-        height: .75rem;
-        min-height: 0;
-        margin-block-end: .45rem;
-        padding-block: 0;
-        overflow: hidden;
-        border-color: transparent;
-        background: linear-gradient(var(--tana-line), var(--tana-line)) center / 2rem 2px no-repeat;
-        color: transparent;
-        -webkit-text-fill-color: transparent;
-        caret-color: transparent;
-    }
     #write ul > li:not(.md-task-list-item)::marker {
         content: "◉  ";
         color: var(--tana-node);
@@ -415,5 +368,4 @@ body{background:var(--bg);color:var(--text)}
 ::highlight(search-hit){background:var(--search-hit);color:var(--search-hit-text)}
 ::highlight(search-select){background:var(--search-current);color:var(--search-current-text)}
 /* YAML collapse belongs to document state. Never use hover to conceal raw YAML. */
-#write pre.md-meta-block:not(:hover),#write pre.md-meta-block:hover{height:auto;min-height:0;overflow:visible;color:var(--yaml-value);-webkit-text-fill-color:currentColor;caret-color:var(--accent);padding:.8rem 1rem;margin-block:0 .8rem;background:var(--surface);border:1px solid var(--border)}
 .md-meta-block[hidden],.yaml-content[hidden]{display:none!important}

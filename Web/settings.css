@@ -42,8 +42,6 @@ body{background:var(--bg);color:var(--text)}
 ::selection{background:var(--selection)}
 ::highlight(search-hit){background:var(--search-hit);color:var(--search-hit-text)}
 ::highlight(search-select){background:var(--search-current);color:var(--search-current-text)}
-/* YAML collapse belongs to document state. Never use hover to conceal raw YAML. */
-#write pre.md-meta-block:not(:hover),#write pre.md-meta-block:hover{height:auto;min-height:0;overflow:visible;color:var(--yaml-value);-webkit-text-fill-color:currentColor;caret-color:var(--accent);padding:.8rem 1rem;margin-block:0 .8rem;background:var(--surface);border:1px solid var(--border)}
 .md-meta-block[hidden],.yaml-content[hidden]{display:none!important}
 .sq-backdrop{position:fixed;inset:0;z-index:10000;display:grid;place-items:center;background:rgb(15 19 27 / 28%);backdrop-filter:blur(5px);font:13px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;color:var(--text)}
 .sq-backdrop .sq-dialog{width:min(600px,calc(100vw - 64px));max-height:calc(100vh - 80px);background:var(--bg);border:1px solid var(--border);border-radius:13px;box-shadow:0 22px 80px rgb(0 0 0 / 25%);overflow:hidden;display:flex;flex-direction:column;outline:none}

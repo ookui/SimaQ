@@ -1,6 +1,125 @@
 import AppKit
 import PDFKit
 import WebKit
+import ImageIO
+
+private final class CenteredImageClipView: NSClipView {
+    override func constrainBoundsRect(_ proposedBounds: NSRect) -> NSRect {
+        var result = super.constrainBoundsRect(proposedBounds)
+        guard let document = documentView else { return result }
+        if document.frame.width < result.width {
+            result.origin.x = document.frame.midX - result.width / 2
+        }
+        if document.frame.height < result.height {
+            result.origin.y = document.frame.midY - result.height / 2
+        }
+        return result
+    }
+    override func mouseDown(with event: NSEvent) {
+        if event.clickCount == 2, let reader = enclosingScrollView as? ImageReaderView {
+            reader.toggleZoom(at: convert(event.locationInWindow, from:nil))
+        } else { super.mouseDown(with:event) }
+    }
+}
+
+private final class InteractiveImageView: NSImageView {
+    override var acceptsFirstResponder: Bool { true }
+    override func mouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(enclosingScrollView)
+        if event.clickCount == 2, let reader = enclosingScrollView as? ImageReaderView {
+            reader.toggleZoom(at:reader.contentView.convert(event.locationInWindow,from:nil))
+        } else { super.mouseDown(with:event) }
+    }
+}
+
+final class ImageReaderView: NSScrollView {
+    private let picture = InteractiveImageView()
+    private var fitting = true
+    private var restore: [String: Any]?
+    private var imageSize = NSSize.zero
+
+    init?(url: URL, state: [String: Any]) {
+        guard let image = NSImage(contentsOf: url) else { return nil }
+        super.init(frame: .zero)
+        imageSize = image.size
+        if let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+           let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+           let width = properties[kCGImagePropertyPixelWidth] as? NSNumber,
+           let height = properties[kCGImagePropertyPixelHeight] as? NSNumber {
+            imageSize = NSSize(width: width.doubleValue, height: height.doubleValue)
+        }
+        guard imageSize.width > 0, imageSize.height > 0 else { return nil }
+        contentView = CenteredImageClipView()
+        picture.image = image
+        picture.imageScaling = .scaleAxesIndependently
+        picture.animates = true
+        picture.toolTip = "Double-click to zoom / fit · ⌘/Ctrl + scroll to zoom · Scroll to pan · Esc to fit"
+        contentView.toolTip = picture.toolTip
+        picture.frame = NSRect(origin: .zero, size: imageSize)
+        documentView = picture
+        hasVerticalScroller = true; hasHorizontalScroller = true
+        scrollerStyle = .overlay; autohidesScrollers = true
+        backgroundColor = .underPageBackgroundColor
+        allowsMagnification = true; minMagnification = 0.001; maxMagnification = 16
+        fitting = state["fit"] as? Bool ?? true
+        restore = state
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    override func layout() {
+        super.layout()
+        guard contentSize.width > 0, contentSize.height > 0 else { return }
+        if fitting {
+            let factor = max(minMagnification, min(1, contentSize.width / imageSize.width, contentSize.height / imageSize.height))
+            if abs(magnification - factor) > 0.0001 { magnification = factor }
+        }
+        if let state = restore {
+            restore = nil
+            if !fitting, let zoom = state["zoom"] as? Double { magnification = min(16, max(0.001, zoom)) }
+            contentView.scroll(to: NSPoint(x: (state["scrollX"] as? Double) ?? 0, y: (state["scrollY"] as? Double) ?? 0))
+            reflectScrolledClipView(contentView)
+        }
+        centerSmallImage()
+    }
+    override var acceptsFirstResponder: Bool { true }
+    private func centerSmallImage() {
+        contentView.setBoundsOrigin(contentView.constrainBoundsRect(contentView.bounds).origin)
+        reflectScrolledClipView(contentView)
+    }
+    override func magnify(with event: NSEvent) {
+        fitting = false; super.magnify(with: event); centerSmallImage()
+    }
+    override func scrollWheel(with event: NSEvent) {
+        if !event.modifierFlags.intersection([.command,.control]).isEmpty {
+            guard event.scrollingDeltaY != 0 else { return }
+            zoom(event.scrollingDeltaY > 0 ? 1.1 : 1 / 1.1,
+                 at:contentView.convert(event.locationInWindow,from:nil))
+        } else { super.scrollWheel(with:event) }
+    }
+    override func mouseDown(with event: NSEvent) {
+        if event.clickCount == 2 { toggleZoom(at:contentView.convert(event.locationInWindow,from:nil)) }
+        else { super.mouseDown(with:event) }
+    }
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53 { fit() } else { super.keyDown(with:event) }
+    }
+    func zoom(_ factor: CGFloat, at point: NSPoint? = nil) {
+        fitting = false
+        setMagnification(min(maxMagnification, max(minMagnification, magnification * factor)),
+                         centeredAt:point ?? NSPoint(x:contentView.bounds.midX,y:contentView.bounds.midY))
+        centerSmallImage()
+    }
+    func toggleZoom(at point: NSPoint? = nil) {
+        window?.makeFirstResponder(self)
+        if fitting { zoom(max(1, magnification * 2) / magnification, at:point) }
+        else { fit() }
+    }
+    func fit() { fitting = true; needsLayout = true; layoutSubtreeIfNeeded() }
+    func actualSize() { zoom(1 / magnification) }
+    func snapshot() -> [String: Any] {
+        ["zoom":Double(magnification), "fit":fitting, "scrollX":Double(contentView.bounds.origin.x), "scrollY":Double(contentView.bounds.origin.y)]
+    }
+    func printImage() { NSPrintOperation(view: picture).run() }
+}
 
 /// A reader has its own WebKit process/configuration and never installs the app's message bridge.
 final class ReaderController: NSObject, WKNavigationDelegate, WKUIDelegate, PDFViewDelegate {
@@ -11,6 +130,8 @@ final class ReaderController: NSObject, WKNavigationDelegate, WKUIDelegate, PDFV
     private let content = NSView()
     private var web: WKWebView?
     private var pdf: PDFView?
+    private var image: ImageReaderView?
+    private var imageButtons: [NSButton] = []
     private var documentURL: URL?
     private var rootURL: URL?
     private var saved: [String: Any] = [:]
@@ -37,6 +158,11 @@ final class ReaderController: NSObject, WKNavigationDelegate, WKUIDelegate, PDFV
             b.bezelStyle = .rounded
             toolbar.addArrangedSubview(b)
         }
+        for (title, selector) in [("Fit", #selector(fitImage)), ("100%", #selector(actualImageSize))] {
+            let button = NSButton(title: title, target: self, action: selector)
+            button.bezelStyle = .rounded; button.isHidden = true
+            imageButtons.append(button); toolbar.addArrangedSubview(button)
+        }
         pageField.placeholderString = "页码"
         pageField.target = self; pageField.action = #selector(goToPage)
         pageField.widthAnchor.constraint(equalToConstant: 55).isActive = true
@@ -60,7 +186,17 @@ final class ReaderController: NSObject, WKNavigationDelegate, WKUIDelegate, PDFV
         guard Self.isInside(canonicalURL, root: canonicalRoot) else { return }
         documentURL = canonicalURL; rootURL = canonicalRoot; saved = state
         let token = UUID(); generation = token
-        if canonicalURL.pathExtension.lowercased() == "pdf" {
+        if Self.isImage(canonicalURL) {
+            pageField.isHidden = true; outline.isHidden = true
+            imageButtons.forEach { $0.isHidden = false }
+            if let preview = ImageReaderView(url: canonicalURL, state: state) {
+                image = preview; install(preview)
+                positionTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in _ = self?.state() }
+            } else {
+                let error = NSTextField(wrappingLabelWithString: "Unable to decode image: " + canonicalURL.lastPathComponent)
+                error.alignment = .center; install(error)
+            }
+        } else if canonicalURL.pathExtension.lowercased() == "pdf" {
             let p = PDFView(); p.autoScales = true; p.displayMode = .singlePageContinuous
             p.delegate = self; p.document = PDFDocument(url: canonicalURL)
             pdf = p; install(p)
@@ -129,11 +265,15 @@ final class ReaderController: NSObject, WKNavigationDelegate, WKUIDelegate, PDFV
         let base = root.standardizedFileURL.resolvingSymlinksInPath().path
         return path == base || path.hasPrefix(base.hasSuffix("/") ? base : base + "/")
     }
+    static func isImage(_ url: URL) -> Bool {
+        ["png","apng","jpg","jpeg","gif","webp","avif","heic","heif","tif","tiff","bmp","ico"].contains(url.pathExtension.lowercased())
+    }
     func close() {
         generation = UUID()
         if let observer = observer { NotificationCenter.default.removeObserver(observer) }
         observer = nil; web?.stopLoading(); web?.navigationDelegate = nil; web?.uiDelegate = nil
-        pdf?.delegate = nil; web = nil; pdf = nil
+        pdf?.delegate = nil; web = nil; pdf = nil; image = nil
+        imageButtons.forEach { $0.isHidden = true }
         content.subviews.forEach { $0.removeFromSuperview() }
         positionTimer?.invalidate(); positionTimer = nil
         documentURL = nil; rootURL = nil; saved = [:]; pendingActions = []; webReady = false
@@ -144,6 +284,7 @@ final class ReaderController: NSObject, WKNavigationDelegate, WKUIDelegate, PDFV
         return saved
     }
     func captureState(_ completion: @escaping ([String: Any]) -> Void) {
+        if let image = image { saved = image.snapshot(); onPosition?(saved) }
         if pdf != nil { recordPDFPosition() }
         if let web = web {
             let snapshot = saved
@@ -182,9 +323,12 @@ final class ReaderController: NSObject, WKNavigationDelegate, WKUIDelegate, PDFV
     @objc private func zoomIn() { zoom(1.2) }
     @objc private func zoomOut() { zoom(1 / 1.2) }
     private func zoom(_ factor: CGFloat) {
+        if let image = image { image.zoom(factor); _ = state() }
         if let p = pdf { p.autoScales = false; p.scaleFactor *= factor; recordPDFPosition() }
         if let w = web { htmlZoom = min(4, max(0.4, htmlZoom * factor)); w.pageZoom = htmlZoom; saved["zoom"] = Double(htmlZoom); onPosition?(saved) }
     }
+    @objc private func fitImage() { image?.fit() }
+    @objc private func actualImageSize() { image?.actualSize(); _ = state() }
     @objc private func copyReference() {
         guard let url = documentURL, let root = rootURL else { return }
         let base = root.path.hasSuffix("/") ? root.path : root.path + "/"
@@ -192,8 +336,9 @@ final class ReaderController: NSObject, WKNavigationDelegate, WKUIDelegate, PDFV
         let suffix = (saved["page"] as? Int).map { "#page=\($0)" } ?? ""
         NSPasteboard.general.clearContents(); NSPasteboard.general.setString(path + suffix, forType: .string)
     }
-    @objc private func printDocument() { if let p = pdf { p.print(with: NSPrintInfo.shared, autoRotate: true) } else if let w = web { w.printOperation(with: NSPrintInfo.shared).run() } }
+    @objc private func printDocument() { if let image = image { image.printImage() } else if let p = pdf { p.print(with: NSPrintInfo.shared, autoRotate: true) } else if let w = web { w.printOperation(with: NSPrintInfo.shared).run() } }
     func action(_ name: String, payload: [String: Any]) {
+        if image != nil && ["locate", "anchor", "find"].contains(name) { return }
         if documentURL?.pathExtension.lowercased() != "pdf", !webReady, ["locate", "anchor", "find"].contains(name) {
             pendingActions.append((name, payload)); return
         }
@@ -211,6 +356,8 @@ final class ReaderController: NSObject, WKNavigationDelegate, WKUIDelegate, PDFV
         case "forward": forward()
         case "zoomIn": zoomIn()
         case "zoomOut": zoomOut()
+        case "fit": fitImage()
+        case "actualSize": actualImageSize()
         case "print": printDocument()
         case "copyReference": copyReference()
         default: break

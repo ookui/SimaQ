@@ -10,12 +10,15 @@ cache="${TMPDIR:-/tmp}/simaq-swift-cache"
 common=(-swift-version 5 -module-cache-path "$cache")
 
 node --test Web/settings.test.cjs Web/editor/*.test.cjs
+swiftc "${common[@]}" Native/ScrollSpeed.swift tests/ScrollSpeedTests.swift -o "$testdir/scroll-tests"
+"$testdir/scroll-tests"
 swiftc "${common[@]}" Native/MarkdownLinks.swift Native/NoteMetadata.swift Native/Workspace.swift Native/Assets.swift tests/workspaceTests.swift -o "$testdir/workspace-tests"
 "$testdir/workspace-tests"
 swiftc "${common[@]}" -I Native/CSQLite -lsqlite3 Native/MarkdownLinks.swift Native/Search.swift tests/search_tests.swift -o "$testdir/search-tests"
 "$testdir/search-tests"
 swiftc "${common[@]}" Native/Reader.swift tests/ReaderTests.swift -o "$testdir/reader-tests"
 "$testdir/reader-tests" --boundary-only
+"$testdir/reader-tests" --images
 if [[ "${1:-}" == "--reader" ]]; then
     "$testdir/reader-tests"
 else

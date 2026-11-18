@@ -15,8 +15,8 @@
   const extOf = (p) => (nameOf(p).match(/\.([^.]+)$/)?.[1] || '').toLowerCase();
   const stem = (p) => nameOf(p).replace(/\.[^.]+$/, '');
   const isMd = (p) => /^(md|markdown|mdown|mkd)$/i.test(extOf(p));
-  const isReader = (p) => /^(pdf|html|htm)$/i.test(extOf(p));
-  const isEditable = (p) => isMd(p) || /^(svg|json|txt)$/i.test(extOf(p));
+  const isReader = (p) => /^(pdf|html|htm|png|apng|jpg|jpeg|gif|webp|avif|heic|heif|tif|tiff|bmp|ico)$/i.test(extOf(p));
+  const isEditable = (p) => isMd(p) || /^(svg|json|txt|csv)$/i.test(extOf(p));
   const supported = (p) => isEditable(p) || isReader(p);
   const join = (parent, child) => parent ? parent + '/' + child : child;
   const atOrUnder = (p, dir) => p === dir || p.startsWith(dir + '/');
@@ -64,6 +64,38 @@
   function icon(n) {
     return '<svg aria-hidden="true" class="sq-svg" viewBox="0 0 24 24"><path d="' +
       (paths[n] || paths.doc) + '"' + (n === 'more' ? ' style="stroke-width:3.5"' : '') + '/></svg>';
+  }
+  const directoryStyles = [
+    {name:'Sources',      color:'#306bd6', icon:'folders'},
+    {name:'Mechanisms',   color:'#8056cc', icon:'sliders'},
+    {name:'Theses',       color:'#ad48b1', icon:'link'},
+    {name:'LifeOS',       color:'#198468', icon:'calendar'},
+    {name:'Library',      color:'#297ba9', icon:'book'},
+    {name:'Projects',     color:'#c74778', icon:'edit'},
+    {name:'Archive',      color:'#ac691e', icon:'clock'},
+    {name:'Tasks',        color:'#758624', icon:'check'},
+  ];
+  const directoryStyleByName = new Map();
+  function assignDirectoryStyles(nodes) {
+    const names = nodes.filter(n => n.dir).map(n => n.name).sort();
+    const usage = directoryStyles.map(() => 0);
+    for (const name of names) {
+      const preferred = directoryStyles.find(style => style.name.toLowerCase() === name.toLowerCase());
+      if (preferred) directoryStyleByName.set(name, preferred);
+      const existing = directoryStyleByName.get(name);
+      if (existing) usage[directoryStyles.indexOf(existing)]++;
+    }
+    for (const name of names) {
+      if (directoryStyleByName.has(name)) continue;
+      const index = usage.indexOf(Math.min(...usage));
+      directoryStyleByName.set(name, directoryStyles[index]);
+      usage[index]++;
+    }
+  }
+  function applyDirectoryColor(element, path) {
+    const style = directoryStyleByName.get(path.split('/')[0]);
+    element.style.setProperty('--directory-accent', style?.color || 'var(--accent)');
+    return style;
   }
   function glyph(path) {
     const e = extOf(path);
@@ -217,13 +249,7 @@
     const r = $('readerTarget').getBoundingClientRect();
     return { x: r.x, y: r.y, width: r.width, height: r.height };
   }
-  let lastSidebarWidth;
   function reposition() {
-    const width = overlayCount || sidebarHidden ? 0 : $('sidebar').getBoundingClientRect().width;
-    if (width !== lastSidebarWidth) {
-      lastSidebarWidth = width;
-      call(() => rpc('sidebarWidth', {width}));
-    }
     if (readerPath) call(() => rpc('readerRect', { rect: readerRect() }));
   }
   function overlay(show) {
@@ -538,7 +564,7 @@
     return '<div class="side-section"><span data-menu-text="' + esc(title) + '">' + esc(window.SimaSettings.menuText(title)) + '</span><div class="side-tools">' + controls +
       '</div></div>';
   }
-  let outlineEditTimer, outlineFrame=0, outlineDirty=false, outlineTab=null, outlineRows=[], visibleHeadings=[], currentOutline=null;
+  let outlineEditTimer, outlineFrame=0, outlineDirty=false, outlineTab=null, outlineRows=[], currentOutline=null;
   const outlineResize = new ResizeObserver(() => scheduleOutline());
   function scheduleOutline(rebuild=false) {
     if (rebuild) clearTimeout(outlineEditTimer);
@@ -562,14 +588,13 @@
     if (outlineDirty) {
       outlineDirty=false;
       const items=tab?.editor.outlineLocations() || [];
-      visibleHeadings=items.filter(h=>!h.hidden);
       panel.hidden=!items.length;
       $('stage').classList.toggle('outline-open',!panel.hidden);
       if (outlineRows.length!==items.length || items.some((h,i)=>h.title!==outlineRows[i].title || h.level!==outlineRows[i].level)) {
         list.replaceChildren(...items.map(h=>{
           const button=document.createElement('button');
           button.type='button'; button.className='outline-row'; button.textContent=h.title;
-          button.style.paddingInlineStart=(8+(h.level-1)*9)+'px';
+          button.style.paddingInlineStart=(8+(h.level-1)*15)+'px';
           return button;
         }));
         currentOutline=null;
@@ -577,7 +602,7 @@
       outlineRows=items;
     }
     if (!tab || panel.hidden) return;
-    const start=tab.editor.centeredHeading(visibleHeadings);
+    const start=tab.editor.centeredHeading(outlineRows);
     const index=outlineRows.findIndex(h=>h.start===start);
     const button=list.children[index];
     if (currentOutline===button) return;
@@ -610,7 +635,7 @@
     journalRows = rows;
     if (mode === 'journals') renderSide();
   }
-  async function openDay(day) {
+  async function openDay(day, newTab = false) {
     const folder = journalFolder(), g = generation, request = ++journalOpenRequest;
     if (folder == null) return;
     activateSide('journals');
@@ -619,15 +644,17 @@
     if (g !== generation || request !== journalOpenRequest || mode !== 'journals') return;
     await refreshJournals();
     if (g !== generation || request !== journalOpenRequest || mode !== 'journals') return;
-    await openPath(entry.path,{pendingJournal:entry.pending ? entry : null,preview:!!entry.pending,permanent:!entry.pending});
+    await openPath(entry.path,{newTab,pendingJournal:entry.pending ? entry : null,preview:!!entry.pending && !newTab,permanent:newTab || !entry.pending});
   }
   function journalTrashMenu(event, rows) {
     event.preventDefault();
     const action = window.SimaSettings.menuText('移入废纸篓…');
-    menu(event, rows.map(row => {
+    const open = window.SimaSettings.menuText('在新标签页中打开');
+    menu(event, rows.flatMap(row => {
       const duplicate = rows.some(other => other.path !== row.path && other.title === row.title);
-      const label = rows.length === 1 ? action : action + ' · ' + (duplicate ? row.path : row.title);
-      return [label, () => trashPath(row.path), 'trash'];
+      const suffix = rows.length === 1 ? '' : ' · ' + (duplicate ? row.path : row.title);
+      return [[open + suffix, () => openPath(row.path,{newTab:true,permanent:true}), 'doc'],
+        [action + suffix, () => trashPath(row.path), 'trash']];
     }));
   }
   function renderJournals(box, scroll) {
@@ -656,7 +683,7 @@
       if (date === today) button.setAttribute('aria-current','date');
       button.title = date + ' · ' + tr('打开日记');
       button.setAttribute('aria-label',button.title);
-      button.onclick = () => call(() => openDay(date));
+      button.onclick = e => call(() => openDay(date, e.metaKey));
       if (dates.has(date)) button.oncontextmenu = e => journalTrashMenu(e, journalRows.filter(row => row.date === date));
       grid.append(button);
     }
@@ -677,9 +704,9 @@
       button.innerHTML = '<small>'+esc(row.date || tr('日期未记'))+'</small><span>'+esc(row.title)+'</span>';
       button.title = row.path;
       button.oncontextmenu = e => journalTrashMenu(e, [row]);
-      button.onclick = () => call(async () => {
+      button.onclick = e => call(async () => {
         if (row.date) journalMonth = monthOf(row.date);
-        await openPath(row.path,{permanent:true});
+        await openPath(row.path,{newTab:e.metaKey,permanent:true});
         renderSide();
       });
       list.append(button);
@@ -739,6 +766,7 @@
         const b = document.createElement('button');
         b.className = 'tree-row' + (selectedPath === n.path ? ' selected' : '');
         b.dataset.path = n.path;
+        const style = n.dir ? applyDirectoryColor(b, n.path) : null;
         b.draggable = true;
         b.setAttribute('role', 'treeitem');
         b.setAttribute('aria-level', depth + 1);
@@ -748,17 +776,17 @@
         b.innerHTML = '<span class="expander">' +
           (n.dir ? icon(expanded.has(n.path) ? 'chevronDown' : 'right') : '') + '</span>' + (n.dir
             ? '<span class="file-glyph folder-icon">' +
-              icon(expanded.has(n.path) ? 'folderOpen' : 'folder') + '</span>'
+              icon(depth === 0 && style ? style.icon : expanded.has(n.path) ? 'folderOpen' : 'folder') + '</span>'
             : glyph(n.path)) +
           '<span class="tree-name">' + esc(n.name) + '</span>';
-        b.onclick = () => {
+        b.onclick = (e) => {
           if (n.dir) {
             captureSideScroll();
             selectedPath = n.path;
             expanded.has(n.path) ? expanded.delete(n.path) : expanded.add(n.path);
             renderSide();
             persistSoon();
-          } else call(() => openPath(n.path));
+          } else call(() => openPath(n.path,{newTab:e.metaKey,permanent:true}));
         };
         b.oncontextmenu = (e) => {
           e.preventDefault();
@@ -883,6 +911,8 @@
     const results = await rpc('tree');
     if (g !== generation || req !== treeRequest) return;
     tree = Array.isArray(results) ? results : results.tree || [];
+    assignDirectoryStyles(tree);
+    for (const t of tabs) if (t.host) applyDirectoryColor(t.host, t.path);
     folders.clear();
     files.clear();
     function walk(nodes) {
@@ -1058,13 +1088,18 @@
       sc.append(group);
       head.className = 'group-head';
       head.title = g.path;
+      head.oncontextmenu = e => {
+        e.preventDefault();
+        menu(e,[['在新标签页中打开', () => openPath(g.path,{newTab:true,permanent:true}), 'doc']]);
+      };
       head.setAttribute('aria-expanded', String(!folded));
       head.innerHTML = '<span class="expander">' + icon(folded ? 'right' : 'chevronDown') + '</span>' +
         '<span class="group-info"><span class="group-title"><span class="basename">' +
         esc(stem(g.path)) + '</span><small class="file-ext">.' + esc(extOf(g.path)) +
         '</small></span><small class="group-path">' + esc((parentOf(g.path) || nameOf(root)) + '/') +
         '</small></span><span class="group-count">' + g.count + '</span>';
-      head.onclick = () => {
+      head.onclick = e => {
+        if (e.metaKey) return call(() => openPath(g.path,{newTab:true,permanent:true}));
         captureSideScroll();
         search.collapsed = folded
           ? search.collapsed.filter((p) => p !== g.path)
@@ -1086,7 +1121,11 @@
         b.innerHTML = (kind ? '<span class="hit-kind">' + esc(kind) + '</span>' : '') +
           esc((h.before || '').split(/\r?\n/).pop().slice(-14)) + '<mark class="md-search-hit">' + esc(h.match) +
           '</mark>' + esc((h.after || '').replace(/\s+/g, ' '));
-        b.onclick = (e) => call(() => followHit(g, i, e.metaKey || e.ctrlKey));
+        b.onclick = (e) => call(() => followHit(g, i, e.metaKey));
+        b.oncontextmenu = e => {
+          e.preventDefault();
+          menu(e,[['在新标签页中打开', () => followHit(g,i,true), 'doc']]);
+        };
         b.ondblclick = () => {
           const t = tabs.find((t) => t.path === g.path);
           if (t) {
@@ -1160,7 +1199,7 @@
       search.selected = search.current = hitKey(g.path, i);
       captureSideScroll();
       const ranges = g.hits.filter(hit => !['name','filename','path'].includes(hit.kind));
-      await doOpen(g.path, { preview: !permanent, history: false, hit: h, ranges });
+      await doOpen(g.path, { newTab:permanent, permanent, preview: !permanent, history: false, hit: h, ranges });
       drawResults();
       persistSoon();
     });
@@ -1326,6 +1365,7 @@
     const data = t.pendingJournal ? {text:t.pendingJournal.text,version:''} : await rpc('read', { path: t.path });
     const host = document.createElement('div');
     host.className = 'doc-host';
+    applyDirectoryColor(host, t.path);
     host.hidden = true;
     $('hosts').append(host);
     t.host = host;
@@ -1335,6 +1375,7 @@
       t.editor = window.SimaEditor.create(host, {
         text: data.text,
         path: t.path,
+        workspaceName: nameOf(root),
         literal: !isMd(t.path),
         settings: settings(),
         onChange: () => onEdit(t),
@@ -1570,10 +1611,11 @@
       pushHistory();
     }
     let t = tabs.find((t) => t.path === path), fresh = !t;
+    const replaced = fresh && opts.newTab === false && !active?.pinned ? active : null;
     if (!t) t = tabRecord(path, opts);
     if (isEditable(path) && !t.editor) await createEditor(t);
     if (fresh) {
-      const preview = opts.preview ? tabs.find((o) => o.preview && !o.dirty && !o.pinned) : null;
+      const preview = opts.preview && opts.newTab === undefined ? tabs.find((o) => o.preview && !o.dirty && !o.pinned) : null;
       if (preview) {
         const idx = tabs.indexOf(preview);
         if (active === preview) {
@@ -1582,11 +1624,16 @@
         }
         await disposeTab(preview);
         tabs.splice(idx, 0, t);
-      } else tabs.push(t);
+      } else if (replaced) tabs.splice(tabs.indexOf(replaced) + 1, 0, t);
+      else tabs.push(t);
     } else if (opts.preview !== true && opts.permanent) t.preview = false;
     await activate(t);
     if (opts.state && t.editor) t.editor.setState(opts.state);
     await locate(t, opts);
+    // Keep the source available until the destination loads and its edits are saved.
+    if (replaced && !replaced.conflict && (!replaced.dirty || await saveTab(replaced)) && !replaced.dirty) {
+      await closeTab(replaced);
+    }
     if (t.editor && !opts.hit && opts.focus) t.editor.focus();
     return t;
   }
@@ -1852,6 +1899,7 @@
     root = data.root || null;
     configuredJournalFolder = data.journalFolder ?? null;
     tree = [];
+    directoryStyleByName.clear();
     files.clear();
     folders.clear();
     expanded.clear();
@@ -1920,23 +1968,10 @@
     }
     return openLinked(target, result.fragment, newTab);
   }
-  async function openLinked(path, fragment, newTab) {
-    return serialize(async () => {
-      const source = active, had = tabs.some((t) => t.path === path);
-      const dest = await doOpen(path, { fragment, permanent: newTab });
-      if (dest && !newTab && !had && source && source !== dest && !source.pinned && !source.dirty) {
-        const index = tabs.indexOf(source);
-        if (index >= 0) {
-          if (!source.pendingJournal) closed.push({ path: source.path, state: copy(rememberState(source)), pinned: false });
-          await disposeTab(source);
-          const i = tabs.indexOf(dest);
-          tabs.splice(i, 1);
-          tabs.splice(index, 0, dest);
-          renderTabs();
-          persistSoon();
-        }
-      }
-    });
+  function openLinked(path, fragment, newTab) {
+    return serialize(() => doOpen(path, {
+      fragment, newTab:newTab || !!active?.dirty, permanent:newTab,
+    }));
   }
   function selectedEditorText(t) {
     const st = t.editor.getState();
@@ -2119,7 +2154,8 @@
     menu(point, [
       isDir && ['新建笔记…', () => createFile(path), 'filePlus'],
       isDir && ['新建文件夹…', () => createFile(path, true), 'folder'],
-      !isDir && supported(path) && ['打开文档', () => openPath(path, { permanent: true }), 'doc'],
+      !isDir && supported(path) && ['打开文档', () => openPath(path, { newTab:false, permanent:true }), 'doc'],
+      !isDir && supported(path) && ['在新标签页中打开', () => openPath(path, { newTab:true, permanent:true }), 'doc'],
       !!path && ['重命名…', async () => {
         const v = await promptText('重命名', '新名称', nameOf(path));
         if (v && v !== nameOf(path)) {
@@ -2539,20 +2575,9 @@
       if (btn.dataset.run) call(() => execute(btn.dataset.run));
       else if (btn.dataset.recent) call(() => chooseWorkspace('openRecent', { path: btn.dataset.recent }));
       else if (btn.dataset.mode === 'search') call(() => openSearch('all'));
-      else if (btn.dataset.mode === 'journals') call(() => openDay(localDay(new Date())));
+      else if (btn.dataset.mode === 'journals') call(() => openDay(localDay(new Date()),e.metaKey));
       else activateSide(btn.dataset.mode);
     });
-    $('sideContent').addEventListener('wheel', e => {
-      const scroller = e.target.closest('#sideScroll');
-      if (!scroller || !e.cancelable || e.ctrlKey || e.shiftKey || e.deltaMode === WheelEvent.DOM_DELTA_PAGE) return;
-      const rowHeight = 29;
-      const delta = e.deltaMode === WheelEvent.DOM_DELTA_LINE ? e.deltaY * rowHeight : e.deltaY;
-      const limit = 3 * rowHeight;
-      if (Math.abs(delta) > limit && Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-        e.preventDefault();
-        scroller.scrollTop += Math.sign(delta) * limit;
-      }
-    }, {passive:false});
     $('hosts').addEventListener('scroll',e=>{
       if (e.target.classList?.contains('sima-editor') && active?.host?.contains(e.target)) scheduleOutline();
     },{capture:true,passive:true});

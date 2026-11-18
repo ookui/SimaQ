@@ -39,23 +39,27 @@ ok(editor.getText() === normalize(raw), '真实编辑器读取混合换行样本
 await SimaShell.run('file.save');
 ok((await rpc('read', { path: fixturePath })).version === initial.version, '未编辑保存保留原始文件字节');
 
-// The pointer can leave the handle while staying inside the full-width YAML block.
+// The preview remains available when moving from the handle into the metadata.
 const yamlHandle = host().querySelector('.sima-yaml-toggle');
 const yamlPreview = host().querySelector('.md-meta-block');
-const initiallyCollapsed = editor.getState().yamlCollapsed;
-if (!initiallyCollapsed) yamlHandle.click();
-function leaveYamlHandle() {
-  yamlHandle.dispatchEvent(new MouseEvent('mouseleave', {relatedTarget:yamlHandle.parentElement}));
+ok(yamlPreview.closest('.sima-page-header')?.contains(host().querySelector('h1')),
+  'YAML 和标题之间夹有注释时仍共用页首');
+const yamlRow = yamlHandle.parentElement;
+ok(yamlPreview.hidden && !editor.getState().yamlPinned, 'YAML 默认自动隐藏');
+function leaveYamlRow() {
+  yamlRow.dispatchEvent(new MouseEvent('mouseleave', {relatedTarget:yamlRow.parentElement}));
 }
-yamlHandle.dispatchEvent(new MouseEvent('mouseenter'));
+yamlRow.dispatchEvent(new MouseEvent('mouseenter'));
 ok(!yamlPreview.hidden, '悬停细线显示 YAML');
-leaveYamlHandle();
-ok(yamlPreview.hidden && yamlHandle.getAttribute('aria-expanded') === 'false', '指针移到同一行的空白处即收起预览');
-yamlHandle.dispatchEvent(new MouseEvent('mouseenter'));
+yamlHandle.dispatchEvent(new MouseEvent('mouseleave', {relatedTarget:yamlPreview}));
+ok(!yamlPreview.hidden, '从细线移动到内容仍能阅读和点击');
+leaveYamlRow();
+ok(yamlPreview.hidden && yamlHandle.getAttribute('aria-expanded') === 'false', '移出 YAML 栏即收起预览');
+yamlRow.dispatchEvent(new MouseEvent('mouseenter'));
 yamlHandle.click();
-leaveYamlHandle();
-ok(!yamlPreview.hidden && !editor.getState().yamlCollapsed, '点击固定后移出细线仍显示 YAML');
-if (initiallyCollapsed) yamlHandle.click();
+leaveYamlRow();
+ok(!yamlPreview.hidden && editor.getState().yamlPinned, '点击固定后移出仍显示 YAML');
+yamlHandle.click();
 
 const typingAt = editor.getText().indexOf('正文输入位置');
 editor.locate(typingAt, 0);
@@ -69,7 +73,7 @@ input.dispatchEvent(new CompositionEvent('compositionupdate', { bubbles: true, d
 input.dispatchEvent(new InputEvent('input', {
   bubbles: true, inputType: 'insertCompositionText', data: 'zhongwen', isComposing: true,
 }));
-const yamlBefore = editor.getState().yamlCollapsed;
+const yamlBefore = editor.getState().yamlPinned;
 await SimaShell.run('theme.dark');
 await SimaShell.run('view.yaml');
 ok(input.isConnected && host().contains(input), '合成输入期间切主题与 YAML 保留活动输入节点');
@@ -85,7 +89,7 @@ input.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data
 input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertFromComposition', data: '中文' }));
 const composed = initial.text.slice(0, typingAt) + '中文' + initial.text.slice(typingAt);
 await wait(() => editor.getText() === composed, '中文合成提交丢失、重复或改变了段落');
-await wait(() => editor.getState().yamlCollapsed !== yamlBefore, '合成完成后 YAML 操作未生效');
+await wait(() => editor.getState().yamlPinned !== yamlBefore, '合成完成后 YAML 操作未生效');
 ok(true, '中文合成提交一次，主题与 YAML 操作未改变正文');
 await SimaShell.run('file.save');
 ok((await rpc('read', { path: fixturePath })).text === composed, '合成提交通过真实保存链路写回');
