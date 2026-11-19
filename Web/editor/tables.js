@@ -132,7 +132,12 @@
     function pointerup(){dragAnchor=null;}
     function clickLink(e){const link=e.target.closest?.('a');if(!link || link.dataset.mathTarget)return;const target=link.dataset.link||link.getAttribute('href');if(target&&options.openLink){e.preventDefault();e.stopPropagation();options.openLink(target,{wiki:link.hasAttribute('data-wiki'),newTab:e.metaKey||e.ctrlKey});}}
     container.addEventListener('keydown',keydown);container.addEventListener('copy',copy);container.addEventListener('cut',cut);container.addEventListener('paste',paste);container.addEventListener('click',clickLink);document.addEventListener('pointerup',pointerup);render();
-    return {action,focus,getWidths:()=>[...widths],focusAt(offset,end=offset){
+    return {action,focus,syncImageSource(next,cell) {
+      const parsed = parse(next);
+      if (!parsed) return;
+      raw = next; model = parsed;
+      cell.querySelector('.sima-table-cell-input').value = model.rows[cell.dataset.row]?.[cell.dataset.column]?.text ?? '';
+    },getWidths:()=>[...widths],focusAt(offset,end=offset){
       const lo=Math.min(offset,end),hi=Math.max(offset,end);let nearest=null,distance=Infinity;
       model.rows.forEach((row,r)=>row.forEach((cell,c)=>{if(cell.start===null)return;const d=lo<cell.start?cell.start-lo:lo>cell.end?lo-cell.end:0;if(d<distance){distance=d;nearest={row:r,column:c,cell};}}));
       if(!nearest)return false;

@@ -10,7 +10,7 @@
   });
   md.renderer.rules.html_block = (t,i) => safeTag(t[i].content);
   md.renderer.rules.html_inline = (t,i) => safeTag(t[i].content);
-  function imageURL(src, note) {
+  function imageURL(src, note, wiki = false) {
     const raw = src.split(/[?#]/)[0];
     const parent = note.split('/').slice(0,-1);
     function resolve(base, path) {
@@ -29,6 +29,8 @@
     const folder = global.SimaSettings?.imageFolder(note);
     const fallback = folder && !raw.startsWith('/') && !decoded.split('/').includes('..')
       ? resolve(parent, folder + '/' + decoded) : null;
+    const matched = wiki && global.SimaShell?.wikiImagePath(decoded, direct, fallback);
+    if (matched) return global.assetURL(matched);
     const url = global.assetURL(direct);
     return fallback && fallback !== direct ? url + '?fallback=' + encodeURIComponent(fallback) : url;
   }
@@ -70,17 +72,38 @@
     state.pos = (title?.pos ?? end) + 1;
     return true;
   }
+  function wikiImage(state, silent) {
+    const match = /^!\[\[([^|\]\n]+?\.(?:svg|png|apng|jpe?g|gif|webp|avif|hei[cf]|tiff?|bmp|ico))(?:\|([^\]\n]*))?\]\]/i.exec(state.src.slice(state.pos, state.posMax));
+    if (!match || /^(?:[a-z][\w+.-]*:|\/\/)/i.test(match[1])) return false;
+    if (!silent) {
+      const token = state.push('image', 'img', 0);
+      token.attrs = [['src', md.normalizeLink(match[1])], ['alt', '']];
+      const width = /^[1-9]\d{0,4}$/.test(match[2] || '') && match[2];
+      if (width) token.attrSet('width', width);
+      const alt = new state.Token('text', '', 0);
+      alt.content = (!width && match[2]) || match[1].split('/').pop();
+      token.children = [alt];
+      token.meta = {wikiImage:true};
+    }
+    state.pos += match[0].length;
+    return true;
+  }
   // A width followed by an optional alignment, both local to this image occurrence.
   const imageLayout = /^(?:\{width=([1-9]\d{0,4})\})?(?:\{align=(left|center|right)\})?/;
   md.inline.ruler.at('image', (state, silent) => {
-    if (!standardImage(state, silent) && !spacedImage(state, silent)) return false;
+    const start = state.pos;
+    if (!wikiImage(state, silent) && !standardImage(state, silent) && !spacedImage(state, silent)) return false;
     const end = state.pos;
     const layout = state.src[end] === '{' && imageLayout.exec(state.src.slice(end, state.posMax));
     if (layout) state.pos += layout[0].length;
     if (!silent) {
       const token = state.tokens.at(-1);
       if (layout?.[1]) token.attrSet('width', layout[1]);
-      token.meta = {align:layout?.[2],imageEnd:state.env.editableImages ? end : undefined};
+      token.meta = {...token.meta, align:layout?.[2]};
+      if (state.env.editableImages) {
+        token.meta.imageEnd = end;
+        token.meta.source = state.src.slice(start, state.pos);
+      }
     }
     return true;
   });
@@ -107,13 +130,15 @@
       if (!/^https?:/i.test(src)) token.attrSet('src', '');
     } else if (typeof global.assetURL === 'function') {
       token.attrSet('data-markdown-src', src);
-      token.attrSet('src', imageURL(src,env.path || ''));
+      if (token.meta?.wikiImage) token.attrSet('data-wiki-image', '');
+      token.attrSet('src', imageURL(src,env.path || '',token.meta?.wikiImage));
     }
     let html = imageRule(tokens,idx,opts,env,self);
-    if (token.meta?.offset != null && token.attrGet('src')) {
+    if (token.meta?.source && token.attrGet('src')) {
       const hint = '拖动调整图片宽度，双击恢复原尺寸';
-      html = '<span class="sima-sized-image">' + html + '<button type="button" class="sima-image-grip" data-offset="' +
-        token.meta.offset + '" title="' + hint + '" aria-label="' + hint + '">↔</button></span>';
+      const fluid = /\.svg(?:$|[?#])/i.test(src) && !token.attrGet('width') ? ' sima-fluid-svg' : '';
+      html = '<span class="sima-sized-image' + fluid + '" data-image-source="' + esc(token.meta.source) + '">' + html + '<button type="button" class="sima-image-grip" data-offset="' +
+        (token.meta.offset ?? token.meta.imageEnd) + '" title="' + hint + '" aria-label="' + hint + '">↔</button></span>';
     }
     const align = token.meta?.align;
     return align ? '<span data-image-align="' + align + '" style="display:flex;justify-content:' +

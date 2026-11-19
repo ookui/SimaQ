@@ -72,3 +72,20 @@ require('node:test')('image alignment is per occurrence and exported with its wi
   }
   assert.doesNotMatch(r.render(image+'{align=unknown}'),/data-image-align/);
 });
+
+require('node:test')('Markdown and wiki SVG images retain the exact selected source', () => {
+  const note = {path:'专题/笔记.md',editableImages:true};
+  for (const [source, size] of [
+    ['![示意](../图像/向量 图.svg)', null],
+    ['![[../图像/向量 图.svg]]', null],
+    ['![[../图像/向量 图.svg|320]]', '320'],
+    ['![示意](../图像/向量 图.svg){width=240}{align=center}', '240']
+  ]) {
+    const html = r.render(source,note);
+    assert.ok(html.includes('data-image-source="'+source+'"'));
+    assert.match(html, /<img src="asset:图像\/向量 图.svg"/);
+    if (size) assert.ok(html.includes('width="'+size+'"'));
+    else assert.match(html,/sima-fluid-svg/);
+    assert.doesNotMatch(r.render(source, {path:note.path}), /data-image-source|sima-image-grip/);
+  }
+});

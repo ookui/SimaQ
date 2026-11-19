@@ -23,12 +23,42 @@ private final class CenteredImageClipView: NSClipView {
 }
 
 private final class InteractiveImageView: NSImageView {
+    private var grabbedPoint: NSPoint?
     override var acceptsFirstResponder: Bool { true }
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(visibleRect, cursor: .openHand)
+    }
+
     override func mouseDown(with event: NSEvent) {
-        window?.makeFirstResponder(enclosingScrollView)
-        if event.clickCount == 2, let reader = enclosingScrollView as? ImageReaderView {
-            reader.toggleZoom(at:reader.contentView.convert(event.locationInWindow,from:nil))
-        } else { super.mouseDown(with:event) }
+        guard let reader = enclosingScrollView as? ImageReaderView else { return }
+        window?.makeFirstResponder(reader)
+        let point = reader.contentView.convert(event.locationInWindow, from: nil)
+        if event.clickCount == 2 {
+            grabbedPoint = nil
+            reader.toggleZoom(at: point)
+        } else {
+            grabbedPoint = point
+            NSCursor.closedHand.set()
+        }
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let anchor = grabbedPoint, let reader = enclosingScrollView else { return }
+        let clip = reader.contentView
+        let pointer = clip.convert(event.locationInWindow, from: nil)
+        var bounds = clip.bounds
+        bounds.origin.x += anchor.x - pointer.x
+        bounds.origin.y += anchor.y - pointer.y
+        clip.scroll(to: clip.constrainBoundsRect(bounds).origin)
+        reader.reflectScrolledClipView(clip)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        grabbedPoint = nil
+        window?.invalidateCursorRects(for: self)
+        if visibleRect.contains(convert(event.locationInWindow, from: nil)) { NSCursor.openHand.set() }
     }
 }
 
@@ -53,7 +83,7 @@ final class ImageReaderView: NSScrollView {
         picture.image = image
         picture.imageScaling = .scaleAxesIndependently
         picture.animates = true
-        picture.toolTip = "Double-click to zoom / fit · ⌘/Ctrl + scroll to zoom · Scroll to pan · Esc to fit"
+        picture.toolTip = "Double-click to zoom / fit · ⌘ + scroll or pinch to zoom · Scroll or drag to pan · Esc to fit"
         contentView.toolTip = picture.toolTip
         picture.frame = NSRect(origin: .zero, size: imageSize)
         documentView = picture
@@ -89,11 +119,22 @@ final class ImageReaderView: NSScrollView {
         fitting = false; super.magnify(with: event); centerSmallImage()
     }
     override func scrollWheel(with event: NSEvent) {
-        if !event.modifierFlags.intersection([.command,.control]).isEmpty {
+        if event.modifierFlags.contains(.command) {
             guard event.scrollingDeltaY != 0 else { return }
             zoom(event.scrollingDeltaY > 0 ? 1.1 : 1 / 1.1,
                  at:contentView.convert(event.locationInWindow,from:nil))
-        } else { super.scrollWheel(with:event) }
+        } else if event.hasPreciseScrollingDeltas {
+            // AppKit owns the complete trackpad gesture, including momentum.
+            super.scrollWheel(with: event)
+        } else {
+            var dx = event.scrollingDeltaX, dy = event.scrollingDeltaY
+            if event.modifierFlags.contains(.shift) && dx == 0 { dx = dy; dy = 0 }
+            var bounds = contentView.bounds
+            bounds.origin.x -= dx * horizontalLineScroll / magnification
+            bounds.origin.y += dy * (contentView.isFlipped ? -1 : 1) * verticalLineScroll / magnification
+            contentView.scroll(to: contentView.constrainBoundsRect(bounds).origin)
+            reflectScrolledClipView(contentView)
+        }
     }
     override func mouseDown(with event: NSEvent) {
         if event.clickCount == 2 { toggleZoom(at:contentView.convert(event.locationInWindow,from:nil)) }

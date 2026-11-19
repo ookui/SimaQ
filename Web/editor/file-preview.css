@@ -19,7 +19,10 @@
   box-sizing: border-box; height: 45vh; min-height: 180px; max-height: 75vh; resize: vertical;
   background: var(--bg);
 }
-.sima-graphic-image { display: block; max-width: none; margin: auto; }
+.sima-graphic-image[data-zoom-cursor="in"] { cursor: zoom-in; }
+.sima-graphic-image[data-zoom-cursor="out"] { cursor: zoom-out; }
+.sima-graphic-image.dragging, .sima-graphic-image[data-zoom-cursor]:active { cursor: grabbing; }
+.sima-graphic-image { cursor: grab; user-select: none; touch-action: none; display: block; max-width: none; margin: auto; }
 .sima-graphic-body { overscroll-behavior: contain; }
 .sima-graphic-dialog {
   box-sizing: border-box; width: calc(100vw - 64px); height: calc(100vh - 64px);

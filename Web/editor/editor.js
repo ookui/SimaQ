@@ -38,7 +38,14 @@
     const renderOptions = {path:options.path || ''};
     const events = new AbortController();
     function on(target, name, fn, extra = {}) {target.addEventListener(name, fn, {...extra,signal:events.signal});}
-    let filePreview;
+    let filePreview, imageCaption, closeImagePreview;
+    function clearImageSelection() {
+      const input = imageCaption;
+      if (!input) return;
+      imageCaption = null;
+      input.remove();
+      input.finishImageEdit();
+    }
     const detachScrollbar = window.SimaScrollbar.attach(viewport);
     const range = () => [Math.min(selection.anchor,selection.head),Math.max(selection.anchor,selection.head)];
     function pick(a,b=a) {selection={anchor:clamp(a,0,text.length),head:clamp(b,0,text.length)};}
@@ -297,6 +304,7 @@
       mathView?.schedule();options.onOutlineChange?.();
     }
     function draw(edit, focus=false, preferTable=true) {
+      closeImagePreview?.(); clearImageSelection();
       outlineJump=null;
       options.onOutlineChange?.();
       for(const b of blocks)b.table?.destroy();
@@ -387,7 +395,7 @@
       const walker=document.createTreeWalker(b.node,NodeFilter.SHOW_TEXT);
       while(walker.nextNode()) {
         const node=walker.currentNode, parent=node.parentElement;
-        if(parent.closest('button,textarea,.sima-text-mirror,.sima-table-toolbar,svg,math'))continue;
+        if(parent.closest('button,textarea,.sima-image-caption,.sima-text-mirror,.sima-table-toolbar,svg,math'))continue;
         const str=node.data;
         // Markdown-it inserts formatting newlines between block elements.
         // Mapping those to source offsets skips the first row or list item.
@@ -483,6 +491,10 @@
       beforeSelection=null;
       const src=reverse?redo:undo,dest=reverse?undo:redo,entry=src.pop();
       if(!entry)return false;
+      if (imageCaption?.restoreImageEdit(entry, reverse)) {
+        dest.push(entry);
+        return true;
+      }
       const gone=reverse?entry.old:entry.inserted, ins=reverse?entry.inserted:entry.old;
       write(entry.from,entry.from+gone.length,ins,reverse?entry.after:entry.before,false);
       if(entry.widths)tableWidths[entry.widths.ordinal]=entry.widths[reverse?'after':'before'];
@@ -683,6 +695,7 @@
         viewport.classList.toggle('sima-focus-mode',focusMode);viewport.classList.toggle('sima-typewriter',typewriter);
         if(typewriter)reveal('center');return true;
       }
+      if(id==='edit.selectAll' && imageCaption && document.activeElement===imageCaption){imageCaption.select();return true;}
       if(id==='edit.selectAll'){pick(0,text.length);draw(true,true,false);return true;}
       if(id==='edit.copy'||id==='edit.cut'||id==='edit.paste'){
         focus();return document.execCommand(id.slice(5));
@@ -690,6 +703,7 @@
       return selectedAction(id,arg);
     }
     function syncVisible() {
+      if (host.hidden) { closeImagePreview?.(); clearImageSelection(); }
       if(!host.hidden && host.isConnected){
         for(const other of document.querySelectorAll('.sima-document#write'))if(other!==doc)other.removeAttribute('id');
         doc.id='write';
@@ -785,6 +799,116 @@
       const start = model?.rows[cell.dataset.row]?.[cell.dataset.column]?.start;
       return start == null ? null : block.start + start + offset;
     }
+    function editImageSource(frame) {
+      const grip = frame.querySelector('.sima-image-grip'), img = frame.querySelector('img');
+      const block = blocks.find(b => b.node === frame.closest('.sima-block'));
+      const imageSyntaxEnd = imageEnd(grip);
+      if (!block || imageSyntaxEnd == null) return;
+      const end = imageSyntaxEnd + window.SimaRender.imageLayout.exec(text.slice(imageSyntaxEnd))[0].length;
+      const syntax = frame.dataset.imageSource;
+      // Markdown-it normalizes newlines. Check the exact occurrence before editing.
+      const raw = text.slice(block.start, end);
+      const normalized = normalize(raw);
+      const offset = normalized.length - syntax.length;
+      if (offset < 0 || !normalized.endsWith(syntax)) return;
+      const start = block.start + rawOffset(raw, offset);
+      const cell = frame.closest('[data-row][data-column]');
+      const localStart = Number(grip.dataset.offset) - normalize(text.slice(start, imageSyntaxEnd)).length;
+      const input = element('textarea', 'sima-image-caption');
+      input.rows = 1;
+      input.wrap = 'off';
+      input.spellcheck = false;
+      input.setAttribute('aria-label', 'Markdown');
+      input.value = text.slice(start, end);
+      input.style.setProperty('--image-source-width', Math.max(22,input.value.length + 2) + 'ch');
+      const context = {...block.context, ...renderOptions, editableImages:true};
+      let length = end - start, edited = false;
+      function renderValue() {
+        const fragment = document.createElement('template');
+        fragment.innerHTML = window.SimaRender.inline(input.value, context);
+        for (const handle of fragment.content.querySelectorAll('.sima-image-grip')) {
+          handle.dataset.offset = localStart + Number(handle.dataset.offset);
+        }
+        return fragment.content;
+      }
+      input.finishImageEdit = () => {
+        if (!edited || !frame.isConnected) return;
+        const outer = frame.parentElement?.hasAttribute('data-image-align') ? frame.parentElement : frame;
+        outer.replaceWith(renderValue());
+      };
+      function update(record = true) {
+        const old = text.slice(start, start + length);
+        if (normalize(old) === input.value) return;
+        const value = input.value.replace(/\n/g, eol(old.includes('\n') ? old : text));
+        const change = difference(old, value);
+        write(start + change.from, start + change.oldEnd, change.inserted, {
+          anchor:start + rawOffset(value,input.selectionStart), head:start + rawOffset(value,input.selectionEnd)
+        }, record);
+        if (record) {
+          undo.at(-1).imageStart = start;
+          undo.at(-1).imageLayout = true;
+        }
+        const delta = value.length - length;
+        shiftBlock(block, delta);
+        const peers = (cell || block.node).querySelectorAll('.sima-image-grip');
+        const oldEnd = localStart + normalize(old).length;
+        for (const peer of peers) if (peer !== grip && Number(peer.dataset.offset) >= oldEnd) {
+          peer.dataset.offset = Number(peer.dataset.offset) + input.value.length - normalize(old).length;
+        }
+        length = value.length;
+        edited = true;
+        if (cell) block.table?.syncImageSource(text.slice(block.start, block.end), cell);
+        const rendered = renderValue();
+        const next = rendered.querySelector('.sima-sized-image');
+        if (next && next.dataset.imageSource === input.value) {
+          const picture = next.querySelector('img');
+          for (const attr of ['src','alt','title','width','data-markdown-src','data-wiki-image']) {
+            if (!picture.hasAttribute(attr)) img.removeAttribute(attr);
+            else if (img.getAttribute(attr) !== picture.getAttribute(attr)) img.setAttribute(attr, picture.getAttribute(attr));
+          }
+          frame.classList.toggle('sima-fluid-svg',next.classList.contains('sima-fluid-svg'));
+          grip.dataset.offset = next.querySelector('.sima-image-grip').dataset.offset;
+        }
+      }
+      function selectSource() {
+        const selected = text.slice(start, start + length);
+        pick(start + rawOffset(selected,input.selectionStart), start + rawOffset(selected,input.selectionEnd));
+      }
+      input.restoreImageEdit = (entry, reverse) => {
+        if (entry.imageStart !== start) return false;
+        const old = text.slice(start, start + length), at = entry.from - start;
+        const gone = reverse ? entry.old : entry.inserted, added = reverse ? entry.inserted : entry.old;
+        if (old.slice(at, at + gone.length) !== gone) return false;
+        const next = old.slice(0, at) + added + old.slice(at + gone.length);
+        const target = reverse ? entry.after : entry.before;
+        const index = n => normalize(next.slice(0, clamp(n - start, 0, next.length))).length;
+        const left = index(Math.min(target.anchor,target.head)), right = index(Math.max(target.anchor,target.head));
+        input.value = normalize(next);
+        input.setSelectionRange(left, right, target.head < target.anchor ? 'backward' : 'forward');
+        update(false);
+        return true;
+      };
+      input.onselect = selectSource;
+      input.onbeforeinput = selectSource;
+      input.oninput = e => { if (!e.isComposing) update(); };
+      input.oncompositionend = () => update();
+      input.onkeydown = e => {
+        if (!e.isComposing && !composing && ['Enter','Escape'].includes(e.key)) {
+          e.preventDefault(); clearImageSelection();
+        }
+        if (!(e.metaKey || e.ctrlKey) || ['a','x','c','v'].includes(e.key.toLowerCase())) e.stopPropagation();
+      };
+      for (const event of ['copy','cut','paste','dblclick']) input.addEventListener(event,e=>e.stopPropagation());
+      imageCaption = input;
+      const top = img.getBoundingClientRect().top;
+      frame.prepend(input);
+      activeTable = null;
+      input.focus({preventScroll:true});
+      input.setSelectionRange(input.value.length,input.value.length);
+      selectSource();
+      // Flow the source into the document while keeping a second click on the image.
+      viewport.scrollTop += img.getBoundingClientRect().top - top;
+    }
     function saveImageLayout(grip, changes, refocus = false) {
       const pos = imageEnd(grip);
       if (pos == null) return;
@@ -799,6 +923,7 @@
     }
     let resizing = null, swallowResizeClick = false;
     on(viewport, 'contextmenu', e => {
+      if (e.target === imageCaption) { e.stopPropagation(); return; }
       const grip = e.target.closest('.sima-sized-image')?.querySelector('.sima-image-grip');
       if (!grip || composing || !options.onImageMenu) return;
       e.stopPropagation();
@@ -815,6 +940,14 @@
     }, {capture:true});
     on(viewport, 'pointerdown', e => {
       swallowResizeClick = false;
+      const frame = e.target.closest('.sima-sized-image');
+      if (!frame && !e.target.closest('dialog')) clearImageSelection();
+      if (e.button === 0 && frame && !e.target.closest('.sima-image-grip')) {
+        // A table cell normally switches to its text field on pointer-down.
+        e.stopPropagation();
+        if (e.target.matches('img')) e.preventDefault();
+        return;
+      }
       if ((e.button===2 || e.ctrlKey) && e.target.closest('.sima-sized-image')) {
         e.stopPropagation();
         return;
@@ -851,11 +984,31 @@
     on(viewport, 'click', e => {
       if (swallowResizeClick || e.target.closest('.sima-image-grip')) {
         swallowResizeClick = false; e.preventDefault(); e.stopPropagation();
+        return;
       }
+      const frame = e.target.closest('.sima-sized-image');
+      if (!frame || e.button !== 0) return;
+      // Keep Command-click navigation for a linked image.
+      if (e.target === imageCaption) { e.stopPropagation(); return; }
+      if ((e.metaKey || e.ctrlKey) && frame.closest('a[href]')) return;
+      e.preventDefault(); e.stopPropagation();
+      if (composing || frame.contains(imageCaption)) return;
+      clearImageSelection();
+      if (active) finishBlock();
+      editImageSource(frame);
     }, {capture:true});
     on(doc, 'dblclick', e => {
       const grip = e.target.closest('.sima-image-grip');
-      if (grip) { e.preventDefault(); e.stopPropagation(); saveImageLayout(grip, {width:null}); }
+      if (grip) { e.preventDefault(); e.stopPropagation(); saveImageLayout(grip, {width:null}); return; }
+      const image = e.target.closest('.sima-sized-image > img');
+      if (!image || composing || e.button !== 0) return;
+      e.preventDefault(); e.stopPropagation();
+      if (closeImagePreview) return;
+      const top = viewport.scrollTop, left = viewport.scrollLeft;
+      closeImagePreview = window.SimaFilePreview.previewImage(host, image, () => {
+        closeImagePreview = null;
+        viewport.scrollTo(left, top);
+      });
     }, {capture:true});
     on(doc, 'keydown', e => {
       const grip = e.target.closest('.sima-image-grip');
@@ -987,7 +1140,7 @@
       }
     });
     on(viewport,'paste',async e=>{
-      if(composing||e.defaultPrevented)return;
+      if(composing||e.defaultPrevented||e.target===imageCaption)return;
       const files=[...(e.clipboardData?.files || [])].filter(f=>f.type.startsWith('image/'));
       if(!files.length || !options.onAsset)return;
       e.preventDefault();readSelection();
@@ -1020,13 +1173,15 @@
       replace:next=>replace(0,text.length,next,0)
     });
     return {getText:()=>text,setText,getState,setState,focus,locate,outlineLocations,centeredHeading,goToHeading,showSearchResult,action,setHighlights,
-      refreshImages(){
-        for (const img of doc.querySelectorAll('img[data-markdown-src]')) {
-          img.src = window.SimaRender.imageURL(img.dataset.markdownSrc,renderOptions.path);
+      refreshImages(wikiOnly = false){
+        const selector = wikiOnly ? 'img[data-wiki-image]' : 'img[data-markdown-src]';
+        for (const img of doc.querySelectorAll(selector)) {
+          const url = window.SimaRender.imageURL(img.dataset.markdownSrc, renderOptions.path, img.hasAttribute('data-wiki-image'));
+          if (img.getAttribute('src') !== url) img.src = url;
         }
       },
       html:()=>options.literal ? '<pre>'+escape(text)+'</pre>' : window.SimaRender.exportWithDiagrams(text,renderOptions),
-      destroy(){destroyed=true;mathView?.destroy();detachScrollbar();filePreview?.destroy();events.abort();visibility.disconnect();for(const b of blocks)b.table?.destroy();host.replaceChildren();}
+      destroy(){destroyed=true;closeImagePreview?.();clearImageSelection();mathView?.destroy();detachScrollbar();filePreview?.destroy();events.abort();visibility.disconnect();for(const b of blocks)b.table?.destroy();host.replaceChildren();}
     };
   }
   window.SimaEditor={create};

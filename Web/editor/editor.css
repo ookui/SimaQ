@@ -35,7 +35,16 @@
 .sima-document :not(pre)>code { background: var(--surface); padding: .08em .28em; border-radius: .2em; }
 .sima-document img { max-width: 100%; height: auto; }
 .sima-sized-image { display: inline-block; position: relative; max-width: 100%; vertical-align: middle; }
-.sima-sized-image > img { display: block; }
+.sima-sized-image > img { display: block; cursor: default; }
+.sima-sized-image.sima-fluid-svg, .sima-fluid-svg > img:not([width]) { width: 100%; }
+.sima-sized-image:has(> .sima-image-caption) { outline: 1px solid var(--accent); }
+.sima-document textarea.sima-image-caption {
+  display: block; position: static; box-sizing: border-box; width: min(var(--image-source-width), calc(100cqw - 7rem)); max-width: 100%;
+  height: 1.9em; margin: 0 0 .25em; padding: .15em .3em; resize: none; border: 0;
+  background: var(--surface); color: var(--text); font: .86em/1.5 var(--monospace, monospace);
+  white-space: pre; overflow: auto; cursor: text;
+}
+@media print { .sima-image-caption { display: none; } }
 #workspaceShell .sima-image-grip {
   position: absolute; right: 0; bottom: 0; width: 24px; height: 22px; padding: 0;
   border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text);

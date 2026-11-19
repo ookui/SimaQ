@@ -70,7 +70,7 @@ try {
   check(dialog.open && dialog.contains(image), 'Double-click opens SVG in a modal foreground preview');
   check(canvas.clientHeight > 400, 'Foreground preview uses the available window height');
   const zoomBefore = parseFloat(image.style.width);
-  canvas.dispatchEvent(new WheelEvent('wheel', {bubbles:true,cancelable:true,deltaY:-100,ctrlKey:true}));
+  canvas.dispatchEvent(new WheelEvent('wheel', {bubbles:true,cancelable:true,deltaY:-100,metaKey:true}));
   check(parseFloat(image.style.width) > zoomBefore, 'Modified wheel zooms foreground SVG');
   const wheel = new WheelEvent('wheel', {bubbles:true,cancelable:true,deltaY:100});
   canvas.dispatchEvent(wheel);

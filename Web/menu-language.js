@@ -31,7 +31,7 @@
     ['触控板','Trackpad','觸控板'],
     ['立即生效并保存。1× 为系统速度；适用于侧栏、正文与预览。','Applied and saved immediately. 1× uses system speed; applies to the sidebar, documents and previews.','立即生效並儲存。1× 為系統速度；適用於側欄、正文與預覽。'],
     ['双击放大预览','Double-click to expand preview','按兩下放大預覽'],
-    ['滚轮滚动 · ⌘/Ctrl + 滚轮缩放 · Esc 返回','Scroll to pan · ⌘/Ctrl + scroll to zoom · Esc to return','滾輪捲動 · ⌘/Ctrl + 滾輪縮放 · Esc 返回'],
+    ['滚轮滚动 · ⌘ + 滚轮缩放 · 拖动平移 · Esc 返回','Scroll to pan · ⌘ + scroll to zoom · Drag to pan · Esc to return','滾輪捲動 · ⌘ + 滾輪縮放 · 拖曳平移 · Esc 返回'],
     ['显示更多','Show More','顯示更多'],
     ['行','rows','列'],
     ['预览失败，请检查源文件。','Preview failed. Check the source file.','預覽失敗，請檢查原始檔。'],

@@ -2,6 +2,94 @@
   'use strict';
   const el = (tag, cls, text) => Object.assign(document.createElement(tag), {className:cls, textContent:text ?? ''});
   const label = text => window.SimaSettings?.menuText(text) ?? text;
+  function graphicControls(body, picture, status, button, on, clickZoom = false) {
+    let zoom = 1, fitting = !clickZoom, width = 0, height = 0;
+    const fitScale = () => Math.min((body.clientWidth - 24) / width, (body.clientHeight - 24) / height);
+    function nextClickZoom() {
+      const fit = fitScale();
+      const small = Math.min(1, fit);
+      if (zoom > small * (1 + 1e-9)) return small;
+      return fit < 1 ? 1 : 2;
+    }
+    function layout() {
+      if (!width || !height || body.clientWidth <= 24 || body.clientHeight <= 24) return;
+      if (fitting) zoom = fitScale();
+      picture.style.width = Math.max(1, width * zoom) + 'px';
+      picture.style.height = Math.max(1, height * zoom) + 'px';
+      if (clickZoom) picture.dataset.zoomCursor = nextClickZoom() < zoom ? 'out' : 'in';
+      status.textContent = Math.round(zoom * 100) + '% · ' + width + ' × ' + height;
+    }
+    function scale(factor, clientX, clientY) {
+      if (!width || !height) return;
+      const bounds = body.getBoundingClientRect(), before = picture.getBoundingClientRect();
+      const x = clientX ?? bounds.left + body.clientWidth / 2;
+      const y = clientY ?? bounds.top + body.clientHeight / 2;
+      const cx = (x - before.left) / zoom, cy = (y - before.top) / zoom;
+      fitting = false;
+      zoom = Math.min(Math.max(16, fitScale() * 16), Math.max(Math.min(.05, fitScale()), zoom * factor)); layout();
+      const after = picture.getBoundingClientRect();
+      body.scrollLeft += after.left + cx * zoom - x;
+      body.scrollTop += after.top + cy * zoom - y;
+    }
+    button('−', () => scale(1 / 1.25));
+    button('+', () => scale(1.25));
+    button('适合窗口', () => { fitting = true; layout(); body.scrollTo(0,0); });
+    button('100%', () => { fitting = false; zoom = 1; layout(); });
+    on(body, 'wheel', e => {
+      if (!e.metaKey) return;
+      e.preventDefault();
+      if (e.deltaY) scale(e.deltaY < 0 ? 1.1 : 1 / 1.1, e.clientX, e.clientY);
+    });
+    picture.draggable = false;
+    let drag = null, moved = false;
+    on(picture, 'pointerdown', e => {
+      if (e.button !== 0 || e.ctrlKey || drag) return;
+      moved = false;
+      if (!clickZoom && body.scrollWidth <= body.clientWidth && body.scrollHeight <= body.clientHeight) return;
+      drag = {id:e.pointerId, x:e.clientX, y:e.clientY, left:body.scrollLeft, top:body.scrollTop};
+      picture.setPointerCapture(e.pointerId);
+      picture.classList.add('dragging');
+      e.preventDefault();
+    });
+    on(picture, 'pointermove', e => {
+      if (drag?.id !== e.pointerId) return;
+      if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) >= 3) moved = true;
+      if (moved) body.scrollTo(drag.left + drag.x - e.clientX, drag.top + drag.y - e.clientY);
+    });
+    function endDrag(e) {
+      if (drag?.id !== e.pointerId) return;
+      drag = null;
+      picture.classList.remove('dragging');
+      if (picture.hasPointerCapture(e.pointerId)) picture.releasePointerCapture(e.pointerId);
+    }
+    for (const event of ['pointerup', 'pointercancel', 'lostpointercapture']) on(picture, event, endDrag);
+    if (clickZoom) on(picture, 'click', e => {
+      if (e.button !== 0 || e.ctrlKey || moved) return;
+      const targetZoom = nextClickZoom();
+      if (targetZoom < 1) {
+        fitting = true;
+        layout();
+        body.scrollTo(0, 0);
+      } else {
+        scale(targetZoom / zoom, e.clientX, e.clientY);
+      }
+    });
+    let gestureScale = 1;
+    on(body, 'gesturestart', e => { e.preventDefault(); gestureScale = 1; });
+    on(body, 'gesturechange', e => {
+      e.preventDefault();
+      if (e.scale > 0) { scale(e.scale / gestureScale, e.clientX, e.clientY); gestureScale = e.scale; }
+    });
+    on(body, 'gestureend', e => e.preventDefault());
+    return {
+      layout,
+      hasSize() { return width > 0 && height > 0; },
+      setSize(w, h) { width = w; height = h; layout(); },
+      state() { return {zoom, fitting}; },
+      restore(state) { zoom = state.zoom; fitting = state.fitting; layout(); },
+      fit() { fitting = true; layout(); body.scrollTo(0, 0); }
+    };
+  }
   function mount(viewport, options) {
     const kind = options.path.split('.').pop().toLowerCase();
     if (!['svg','json','csv'].includes(kind)) return null;
@@ -26,51 +114,15 @@
       body.classList.add('sima-graphic-body');
       const picture = el('img', 'sima-graphic-image');
       picture.alt = options.path;
-      picture.draggable = false;
       body.append(picture);
-      let zoom = 1, fitting = true, width = 0, height = 0, sourceSize;
-      const fitScale = () => Math.min((body.clientWidth - 24) / width, (body.clientHeight - 24) / height);
-      function layout() {
-        if (!width || !height || body.clientWidth <= 24 || body.clientHeight <= 24) return;
-        if (fitting) zoom = fitScale();
-        picture.style.width = Math.max(1, width * zoom) + 'px';
-        picture.style.height = Math.max(1, height * zoom) + 'px';
-        status.textContent = Math.round(zoom * 100) + '% · ' + width + ' × ' + height;
-      }
-      function scale(factor, clientX, clientY) {
-        const bounds = body.getBoundingClientRect(), before = picture.getBoundingClientRect();
-        const x = clientX ?? bounds.left + body.clientWidth / 2;
-        const y = clientY ?? bounds.top + body.clientHeight / 2;
-        const cx = (x - before.left) / zoom, cy = (y - before.top) / zoom;
-        fitting = false;
-        zoom = Math.min(Math.max(16, fitScale() * 16), Math.max(Math.min(.05, fitScale()), zoom * factor)); layout();
-        const after = picture.getBoundingClientRect();
-        body.scrollLeft += after.left + cx * zoom - x;
-        body.scrollTop += after.top + cy * zoom - y;
-      }
-      button('−', () => scale(1 / 1.25));
-      button('+', () => scale(1.25));
-      button('适合窗口', () => { fitting = true; layout(); body.scrollTo(0,0); });
-      button('100%', () => { fitting = false; zoom = 1; layout(); });
-      on(body, 'wheel', e => {
-        if (!e.ctrlKey && !e.metaKey) return;
-        e.preventDefault();
-        if (e.deltaY) scale(e.deltaY < 0 ? 1.1 : 1 / 1.1, e.clientX, e.clientY);
-      });
-      let gestureScale = 1;
-      on(body, 'gesturestart', e => { e.preventDefault(); gestureScale = 1; });
-      on(body, 'gesturechange', e => {
-        e.preventDefault();
-        if (e.scale > 0) { scale(e.scale / gestureScale, e.clientX, e.clientY); gestureScale = e.scale; }
-      });
-      on(body, 'gestureend', e => e.preventDefault());
-
+      let sourceSize;
+      const controls = graphicControls(body, picture, status, button, on);
       const dialog = el('dialog', 'sima-graphic-dialog');
       dialog.setAttribute('aria-label', options.path);
       const header = el('div', 'sima-graphic-heading');
       const title = el('strong', '', options.path.split('/').pop());
       const close = el('button', '', label('关闭') + ' · Esc'); close.type = 'button';
-      const hint = el('span', 'sima-graphic-hint', label('滚轮滚动 · ⌘/Ctrl + 滚轮缩放 · Esc 返回'));
+      const hint = el('span', 'sima-graphic-hint', label('滚轮滚动 · ⌘ + 滚轮缩放 · 拖动平移 · Esc 返回'));
       header.append(title, close); dialog.append(header, hint); panel.append(dialog);
       body.title = label('双击放大预览');
       body.tabIndex = 0;
@@ -80,17 +132,17 @@
         const saved = inlineState; inlineState = null;
         dialog.close();
         panel.insertBefore(toolbar, dialog); panel.insertBefore(body, dialog);
-        zoom = saved.zoom; fitting = saved.fitting; layout();
+        controls.restore(saved);
         body.scrollTo(saved.left, saved.top);
         viewport.scrollTop = saved.viewportTop;
         if (!destroyed) saved.focus?.focus({preventScroll:true});
       };
       function foreground() {
-        if (dialog.open || picture.hidden || !width) return;
-        inlineState = {zoom, fitting, left:body.scrollLeft, top:body.scrollTop,
+        if (dialog.open || picture.hidden || !controls.hasSize()) return;
+        inlineState = {...controls.state(), left:body.scrollLeft, top:body.scrollTop,
           viewportTop:viewport.scrollTop, focus:document.activeElement};
         dialog.append(toolbar, body); dialog.showModal();
-        fitting = true; layout(); body.scrollTo(0,0); close.focus({preventScroll:true});
+        controls.fit(); close.focus({preventScroll:true});
       }
       on(body, 'dblclick', e => { e.preventDefault(); e.stopPropagation(); foreground(); });
       on(body, 'keydown', e => { if (e.key === 'Enter' && !dialog.open) { e.preventDefault(); foreground(); } });
@@ -102,12 +154,11 @@
         if (e.key === 'Escape') { e.preventDefault(); closeForeground(); }
       });
       on(picture, 'load', () => {
-        width = sourceSize?.width || picture.naturalWidth;
-        height = sourceSize?.height || picture.naturalHeight;
-        picture.hidden = false; layout();
+        picture.hidden = false;
+        controls.setSize(sourceSize?.width || picture.naturalWidth, sourceSize?.height || picture.naturalHeight);
       });
       on(picture, 'error', () => { picture.hidden = true; status.textContent = label('预览失败，请检查源文件。'); });
-      resize = new ResizeObserver(layout); resize.observe(body);
+      resize = new ResizeObserver(controls.layout); resize.observe(body);
       update = () => {
         const source = options.getText();
         const parsed = new DOMParser().parseFromString(source, 'image/svg+xml');
@@ -228,5 +279,54 @@
       destroy() { destroyed = true; clearTimeout(timer); resize?.disconnect(); closeForeground?.(); events.abort(); if (blobURL) URL.revokeObjectURL(blobURL); panel.remove(); }
     };
   }
-  window.SimaFilePreview = {mount};
+  function previewImage(parent, original, onClose) {
+    const dialog = el('dialog', 'sima-graphic-dialog');
+    const header = el('div', 'sima-graphic-heading');
+    const title = original.alt || label('预览');
+    dialog.setAttribute('aria-label', title);
+    const closeButton = el('button', '', label('关闭') + ' · Esc');
+    header.append(el('strong', '', title), closeButton);
+    const toolbar = el('div', 'sima-file-tools'), status = el('span', 'sima-file-status');
+    const body = el('div', 'sima-file-body sima-graphic-body');
+    const picture = el('img', 'sima-graphic-image');
+    picture.alt = original.alt;
+    body.append(picture);
+    dialog.append(header, toolbar, body);
+    parent.append(dialog);
+    const on = (node, event, fn) => node.addEventListener(event, fn);
+    function button(title, action) {
+      const b = el('button', '', label(title));
+      b.type = 'button'; b.onclick = action; toolbar.append(b);
+    }
+    const controls = graphicControls(body, picture, status, button, on, true);
+    toolbar.append(status);
+    const observer = new ResizeObserver(controls.layout);
+    observer.observe(body);
+    function close() {
+      if (!dialog.open) return;
+      observer.disconnect();
+      document.removeEventListener('sima:modal-opening', close);
+      dialog.close(); dialog.remove(); onClose();
+    }
+    dialog.oncancel = e => { e.preventDefault(); close(); };
+    dialog.onkeydown = e => {
+      e.stopPropagation();
+      if (e.key === 'Escape') { e.preventDefault(); close(); }
+    };
+    closeButton.onclick = close;
+    document.addEventListener('sima:modal-opening', close);
+    picture.onload = () => {
+      const rect = original.getBoundingClientRect();
+      const width = picture.naturalWidth || rect.width;
+      // A viewBox-only SVG may have a synthetic intrinsic size in WebKit.
+      const height = original.closest('.sima-fluid-svg') && rect.width > 0
+        ? width * rect.height / rect.width : picture.naturalHeight || rect.height;
+      controls.setSize(width, height);
+    };
+    dialog.showModal();
+    picture.src = original.currentSrc || original.src;
+    closeButton.focus({preventScroll:true});
+    return close;
+  }
+  window.SimaFilePreview = {mount, previewImage};
 })();

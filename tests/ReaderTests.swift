@@ -48,13 +48,49 @@ import WebKit
                 precondition(preview.magnification > fitted, "\(ext) double click zooms")
                 preview.documentView!.mouseDown(with:click)
                 precondition(abs(preview.magnification-fitted)<0.001, "\(ext) second double click fits")
-                for flags: CGEventFlags in [.maskCommand,.maskControl] {
-                    let wheel = CGEvent(scrollWheelEvent2Source:nil,units:.pixel,wheelCount:1,wheel1:10,wheel2:0,wheel3:0)!
+                let wheels: [(CGScrollEventUnit, CGEventFlags, Int32)] = [
+                    (.line, [], 1), (.line, [], -1), (.pixel, [], 10),
+                    (.line, .maskCommand, 1), (.line, .maskCommand, -1),
+                    (.pixel, .maskCommand, 10), (.pixel, .maskControl, 10)
+                ]
+                for (unit, flags, delta) in wheels {
+                    let wheel = CGEvent(scrollWheelEvent2Source:nil,units:unit,wheelCount:1,wheel1:delta,wheel2:0,wheel3:0)!
                     wheel.flags = flags
                     let before = preview.magnification
                     preview.documentView!.scrollWheel(with:NSEvent(cgEvent:wheel)!)
-                    precondition(preview.magnification > before, "\(ext) modified wheel zooms")
+                    if !flags.contains(.maskCommand) {
+                        precondition(preview.magnification == before, "\(ext) unmodified and Control scrolling preserve zoom")
+                    } else if delta > 0 {
+                        precondition(preview.magnification > before, "\(ext) wheel zooms in")
+                    } else {
+                        precondition(preview.magnification < before, "\(ext) wheel zooms out")
+                    }
                 }
+                preview.actualSize()
+                preview.zoom(16)
+                let clip = preview.contentView
+                clip.scroll(to: NSPoint(x:18, y:18))
+                let beforeWheel = clip.bounds.origin
+                let scroll = CGEvent(scrollWheelEvent2Source:nil,units:.line,wheelCount:1,wheel1:1,wheel2:0,wheel3:0)!
+                preview.documentView!.scrollWheel(with:NSEvent(cgEvent:scroll)!)
+                precondition(clip.bounds.minY != beforeWheel.y && preview.magnification == 16, "Plain wheel scrolls enlarged image")
+                clip.scroll(to:beforeWheel)
+                let origin = clip.bounds.origin
+                func mouse(_ type: NSEvent.EventType, _ x: CGFloat, _ y: CGFloat) -> NSEvent {
+                    NSEvent.mouseEvent(with:type, location:NSPoint(x:x,y:y), modifierFlags:[],
+                        timestamp:0, windowNumber:0, context:nil, eventNumber:1, clickCount:1, pressure:1)!
+                }
+                let pic = preview.documentView!
+                pic.mouseDown(with:mouse(.leftMouseDown,200,180))
+                pic.mouseDragged(with:mouse(.leftMouseDragged,104,116))
+                let moved = clip.bounds.origin
+                precondition(abs(abs(moved.x-origin.x)*16-96)<1 && abs(abs(moved.y-origin.y)*16-64)<1, "Drag follows the pointer at 1600%")
+                pic.mouseDragged(with:mouse(.leftMouseDragged,200,180))
+                precondition(hypot(clip.bounds.minX-origin.x, clip.bounds.minY-origin.y)<0.1, "Reverse drag returns to the grabbed point")
+                pic.mouseUp(with:mouse(.leftMouseUp,200,180))
+                let released = clip.bounds.origin
+                pic.mouseDragged(with:mouse(.leftMouseDragged,90,70))
+                precondition(clip.bounds.origin == released, "Releasing stops pan")
                 preview.actualSize();preview.zoom(0.2);centered("zoomed out")
                 preview.frame = NSRect(x:0,y:0,width:900,height:700)
                 preview.layoutSubtreeIfNeeded();centered("resized")
@@ -77,7 +113,7 @@ import WebKit
             let corrupt = folder.appendingPathComponent("broken.png")
             try Data("broken".utf8).write(to:corrupt)
             precondition(ImageReaderView(url:corrupt,state:[:]) == nil)
-            print("Image reader: PNG/JPEG/GIF/TIFF/BMP decode, centering, double-click, modified-wheel zoom, resize, restore and invalid-file tests passed")
+            print("Image reader: PNG/JPEG/GIF/TIFF/BMP decode, centering, double-click, Command-wheel zoom, plain-wheel handling, bidirectional drag at 1600%, resize, restore and invalid-file tests passed")
             return
         }
         _ = NSApplication.shared

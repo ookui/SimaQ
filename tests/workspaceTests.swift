@@ -65,6 +65,11 @@ import UniformTypeIdentifiers
         let imageURL = URL(string:"simaq-asset://workspace/%E7%AC%94%E8%AE%B0/Pasted%20image%201.png")!
         let (bytes,mime) = try AssetHandler.image(imageURL,workspace:ws)
         try assertThat(bytes == png && mime == "image/png","PNG asset resolves through an encoded path")
+        let svg = Data(#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 320"><rect width="720" height="320" fill="teal"/></svg>"#.utf8)
+        try svg.write(to:ws.fileURL("笔记/向量 图.svg"))
+        let svgURL = URL(string:"simaq-asset://workspace/笔记/向量%20图.svg".addingPercentEncoding(withAllowedCharacters:.urlFragmentAllowed.union(CharacterSet(charactersIn:"%")))!)!
+        let (svgBytes,svgMIME) = try AssetHandler.image(svgURL,workspace:ws)
+        try assertThat(svgBytes == svg && svgMIME == "image/svg+xml","full SVG served from encoded image path")
         let clipboard = AssetHandler.clipboardItem(bytes,type:.png)
         try assertThat(clipboard.data(forType:.png) == png,"copy image supplies original PNG bytes")
         try assertThat(clipboard.data(forType:.tiff)?.isEmpty == false, "bitmap paste available for TIFF consumers")

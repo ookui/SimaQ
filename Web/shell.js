@@ -3,6 +3,7 @@
   const $ = (id) => document.getElementById(id);
   const rpc = (method, args = {}) => window.rpc(method, args);
   const files = new Map(), folders = new Set(), expanded = new Set(), tabs = [], closed = [];
+  const imageNames = new Map();
   const previous = [], next = [];
   const documentViews = new Map();
   const esc = (value) =>
@@ -915,15 +916,21 @@
     for (const t of tabs) if (t.host) applyDirectoryColor(t.host, t.path);
     folders.clear();
     files.clear();
+    imageNames.clear();
     function walk(nodes) {
       for (const n of nodes) {
         if (n.dir) {
           folders.add(n.path);
           walk(n.children || []);
-        } else files.set(n.path, n);
+        } else {
+          files.set(n.path, n);
+          const name = n.name.toLowerCase();
+          imageNames.set(name, imageNames.has(name) ? null : n.path);
+        }
       }
     }
     walk(tree);
+    for (const tab of tabs) tab.editor?.refreshImages(true);
     $('todayButton').hidden = journalFolder() == null;
     if (mode === 'journals') {
       if ($('todayButton').hidden) mode = 'tree';
@@ -1901,6 +1908,7 @@
     tree = [];
     directoryStyleByName.clear();
     files.clear();
+    imageNames.clear();
     folders.clear();
     expanded.clear();
     closed.length = previous.length = next.length = 0;
@@ -2676,5 +2684,10 @@
     });
     await loadWorkspace(await rpc('bootstrap'));
   }
-  window.SimaShell = { start, event, run, prepareClose, overlay };
+  function wikiImagePath(path, direct, fallback) {
+    for (const candidate of [direct, fallback, path]) if (files.has(candidate)) return candidate;
+    if (path.includes('/')) return null;
+    return imageNames.get(path.toLowerCase()) ?? null;
+  }
+  window.SimaShell = { start, event, run, prepareClose, overlay, wikiImagePath };
 })();
