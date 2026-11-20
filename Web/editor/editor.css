@@ -23,6 +23,8 @@
 .sima-block { position: relative; display: flow-root; min-width: 0; cursor: text; }
 .sima-block[data-kind="blank"] { min-height: .42em; }
 .sima-block[data-kind="blank"]:last-child { min-height: 1.7em; }
+.sima-end-entry { min-height: 2.5em; cursor: text; }
+@media print { .sima-end-entry { display: none; } }
 .sima-block p { margin: var(--paragraph-before, .28em) 0 var(--paragraph-after, .33em); }
 .sima-document a { color: var(--link); text-decoration-thickness: 1px; text-underline-offset: .17em; cursor: pointer; }
 .sima-block ul, .sima-block ol { margin: .32em 0; padding-inline-start: 1.65em; }

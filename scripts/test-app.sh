@@ -16,7 +16,7 @@ if [[ "${1:-}" == "--performance" ]]; then
 else
     export SIMAQ_TEST_ROOT="$testdir/fixture"
     cp -R Samples "$SIMAQ_TEST_ROOT"
-    phases=(app-integration app-restore app-preferences app-editing app-caret app-wechat app-math app-file-previews app-inline-images app-scroll-settings)
+    phases=(app-integration app-restore app-preferences app-editing app-caret app-wechat app-math app-file-previews app-inline-images app-image-end app-scroll-settings)
     if [[ "${1:-}" == "--caret" ]]; then phases=(app-caret); fi
 fi
 for phase in "${phases[@]}"; do

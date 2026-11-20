@@ -334,6 +334,9 @@
         } else drawBlock(b);
       }
       layoutPageHeader(fragment);
+      const endEntry=element('div','sima-end-entry');
+      endEntry.setAttribute('aria-label','在文末添加段落');
+      fragment.append(endEntry);
       doc.replaceChildren(fragment);
       if(target?.table && focus) {
         const inside=target.table.focusAt(desired.anchor-target.start,desired.head-target.start);
@@ -1049,6 +1052,16 @@
     on(viewport,'input',e=>{if(e.target===field && !e.isComposing)inputChange();});
     on(viewport,'select',e=>{if(e.target===field&&!composing)readField();}, {capture:true});
     on(viewport,'click',e=>{
+      if(!source && !composing && e.button===0 && e.target.closest('.sima-end-entry')) {
+        e.preventDefault();
+        clearImageSelection();
+        const newline=eol();
+        const trailing=normalize(text).match(/\n*$/)[0].length;
+        const separator=text.length ? newline.repeat(Math.max(0,2-trailing)) : '';
+        pick(text.length);
+        replace(text.length,text.length,separator);
+        return;
+      }
       const equation=e.target.closest('a[data-math-target]');
       if(equation){
         e.preventDefault();
