@@ -57,6 +57,14 @@ await SimaShell.run('file.save');
 ok((await rpc('read',{path:note})).version===initial.version,'无编辑存储不改变文件散列');
 await SimaShell.run('search.workspace');
 await wait(()=>document.querySelector('#queryInput'),'missing search field');
+const variantInput=document.querySelector('#queryInput');
+variantInput.value='視覺感知';variantInput.dispatchEvent(new Event('input',{bubbles:true}));
+const variantHit=()=>[...document.querySelectorAll('.hit-row')].find(row=>
+  row.title.startsWith(note+'\n') && row.querySelector('mark')?.textContent==='视觉感知');
+await wait(variantHit,'繁体查询未显示简体原文');
+variantHit().click();
+await wait(()=>visibleHost.querySelector('mark.md-search-select')?.textContent==='视觉感知','简繁搜索未定位到原文字形');
+ok(true,'繁体查询可点击并高亮简体原文');
 const search=document.querySelector('#queryInput');
 search.value='physical ai';search.dispatchEvent(new Event('input',{bubbles:true}));
 await wait(()=>[...document.querySelectorAll('.group-head')].some(n=>n.title.startsWith('归档/')),'missing archive search result');
@@ -72,6 +80,28 @@ ok(archiveHeader?.querySelector('.sima-folder-tag')?.textContent === '# 2025','�
 ok(archiveHeader && getComputedStyle(archiveHeader).getPropertyValue('--directory-accent') !==
    getComputedStyle(header).getPropertyValue('--directory-accent'),'多级子目录的笔记采用所属大目录的独立配色');
 ok(document.querySelectorAll('.tab').length>=2,'两个标签同时保留');
+const trashLabel = SimaSettings.menuText('移入废纸篓…');
+const chooseTrash = async () => {
+  [...document.querySelectorAll('[role="menuitem"]')].find(item => item.textContent === trashLabel).click();
+  await wait(() => document.querySelector('[data-answer="trash"]'), '未显示废纸篓确认框');
+};
+const resultGroup = () => [...document.querySelectorAll('.group-head')].find(row => row.title === archive.title);
+for (const row of [resultGroup(), resultGroup().parentElement.querySelector('.hit-row'), document.querySelector('.tab[aria-selected="true"]')]) {
+  row.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true}));
+  await chooseTrash();
+  ok(document.querySelector('.dialog-content p').textContent === archive.title,'删除确认显示归档笔记的完整相对路径');
+  document.querySelector('[data-answer="cancel"]').click();
+}
+ok(activePath() === archive.title && resultGroup(), '取消删除保留原标签与搜索结果');
+document.getElementById('documentMenu').click();
+await chooseTrash();
+document.querySelector('[data-answer="trash"]').click();
+await wait(() => !resultGroup() && ![...document.querySelectorAll('.tab')].some(t => t.title === archive.title),
+  '删除后搜索结果或标签未清理');
+const paths = (await rpc('files')).map(file => file.path);
+ok(!paths.includes(archive.title) && paths.includes(note),'在文档菜单删除搜索打开的归档笔记，保留其他目录的同名笔记');
+const indexed = await rpc('search',{q:'physical ai'});
+ok(!indexed.some(row => row.path === archive.title) && indexed.some(row => row.path === note), '搜索索引同步移除已删除页面');
 await SimaShell.event('openPath',{path:report,newTab:true});
 await wait(()=>document.querySelector('.tab[aria-selected="true"]')?.title===report,'html tab did not open');
 ok(await rpc('readerTrusted',{path:report})===false,'HTML 报告初始禁用脚本');

@@ -134,6 +134,44 @@ import CoreGraphics
   assert(query(["q":"物理AI","exact":true])[0]["count"] as? Int == 1)
   assert(query(["q":"物理AI","caseSensitive":true])[0]["count"] as? Int == 2)
   assert(query(["q":"物理AI","wholeWord":true]).isEmpty)
+  let variantsPath = "字形.md", variantsURL = root.appendingPathComponent(variantsPath)
+  let variantsText = "# 國產替代\n😀 國產AI、国产-ai、國产 AI、國產AId。"
+  try variantsText.write(to:variantsURL,atomically:true,encoding:.utf8)
+  s.update(variantsURL)
+  func bodyHits(_ request: [String:Any]) -> [[String:Any]] {
+    query(request).first { $0["path"] as? String == variantsPath }?["hits"] as? [[String:Any]] ?? []
+  }
+  for q in ["国","國","国产","國產","国產"] { assert(bodyHits(["q":q]).count == 5, q) }
+  for q in ["国产替代","國產替代"] {
+    let h = bodyHits(["q":q]).first!
+    assert(h["kind"] as? String == "heading" && h["match"] as? String == "國產替代")
+  }
+  let mixedForms = bodyHits(["q":"国产AI"])
+  assert(mixedForms.compactMap { $0["match"] as? String } == ["國產AI","国产-ai","國产 AI"])
+  for h in mixedForms {
+    let range = NSRange(location:h["start"] as! Int,length:h["length"] as! Int)
+    assert((variantsText as NSString).substring(with:range) == h["match"] as! String)
+  }
+  assert(bodyHits(["q":"国产AI","exact":true]).count == 1)
+  assert(bodyHits(["q":"國產AI","caseSensitive":true]).count == 2)
+  assert(bodyHits(["q":"国产","regex":true]).count == 1)
+  let draft = [variantsPath:"😀 國產AI、国产AI"]
+  assert(bodyHits(["q":"國產AI","document":variantsPath,"buffers":draft]).count == 2)
+  assert(bodyHits(["q":"国产替代","buffers":draft]).isEmpty)
+  let variantFolder = root.appendingPathComponent("半導體")
+  try FileManager.default.createDirectory(at:variantFolder,withIntermediateDirectories:true)
+  let variantFile = variantFolder.appendingPathComponent("國產替代.md")
+  try "😀 髮、發、发。製造業。".write(to:variantFile,atomically:true,encoding:.utf8)
+  s.update(variantFile)
+  for q in ["国产","国产替代"] {
+    let first = query(["q":q,"limit":1]).first!
+    assert(first["name"] as? String == "國產替代.md" && first["count"] as? Int == 0)
+  }
+  assert((query(["q":"半导体"]).first!["hits"] as! [[String:Any]]).first!["match"] as? String == "半導體")
+  assert(query(["q":"发"]).first!["count"] as? Int == 3)
+  for q in ["制造","制造业"] {
+    assert((query(["q":q]).first!["hits"] as! [[String:Any]]).first!["kind"] as? String == "body")
+  }
   let live = ["混合.md":"# 原文已改写\n研究物理AI应用"]
   assert(query(["q":"物理AI","buffers":live])[0]["count"] as? Int == 1)
   assert(query(["q":"原文已改写","document":"混合.md","buffers":live]).count == 1)

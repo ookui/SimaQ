@@ -491,6 +491,7 @@
           }, 'pin'],
           !t.pendingJournal && ['复制相对路径', () => rpc('copyText', { text: t.path }), 'copy'],
           !t.pendingJournal && ['在 Finder 中显示', () => rpc('reveal', { path: t.path }), 'external'],
+          !t.pendingJournal && trashMenuItem(t.path),
           null,
           ['关闭标签', () => serialize(() => closeTab(t)), 'close'],
           ['关闭其他未固定标签', () => closeTabs(o => o !== t && !o.pinned)],
@@ -1097,7 +1098,7 @@
       head.title = g.path;
       head.oncontextmenu = e => {
         e.preventDefault();
-        menu(e,[['在新标签页中打开', () => openPath(g.path,{newTab:true,permanent:true}), 'doc']]);
+        menu(e,[['在新标签页中打开', () => openPath(g.path,{newTab:true,permanent:true}), 'doc'], trashMenuItem(g.path)]);
       };
       head.setAttribute('aria-expanded', String(!folded));
       head.innerHTML = '<span class="expander">' + icon(folded ? 'right' : 'chevronDown') + '</span>' +
@@ -1131,7 +1132,7 @@
         b.onclick = (e) => call(() => followHit(g, i, e.metaKey));
         b.oncontextmenu = e => {
           e.preventDefault();
-          menu(e,[['在新标签页中打开', () => followHit(g,i,true), 'doc']]);
+          menu(e,[['在新标签页中打开', () => followHit(g,i,true), 'doc'], trashMenuItem(g.path)]);
         };
         b.ondblclick = () => {
           const t = tabs.find((t) => t.path === g.path);
@@ -2174,7 +2175,7 @@
       !!path && ['移动到…', () => chooseMoveFolder(path), 'folderOpen'],
       !!path && ['在 Finder 中显示', () => rpc('reveal', { path }), 'external'],
       !!path && ['复制相对路径', () => rpc('copyText', { text: path }), 'copy'],
-      !!path && ['移入废纸篓…', () => trashPath(path), 'trash'],
+      !!path && trashMenuItem(path),
       null,
       ['检查失效链接…', fixLinks, 'link'],
       ['重建搜索索引', async () => {
@@ -2275,6 +2276,9 @@
     revealTreePath(to);
     toast('已移动到 ' + to);
   }
+  function trashMenuItem(path) {
+    return ['移入废纸篓…', () => trashPath(path), 'trash'];
+  }
   async function trashPath(path) {
     const tr = window.SimaSettings.menuText;
     const reply = await dialog(tr('移入废纸篓？'), '<p>' + esc(path) + '</p>', [[tr('取消'), 'cancel'], [
@@ -2291,6 +2295,16 @@
       }
     }
     await rpc('trash', { path });
+    groups = groups.filter(group => !atOrUnder(group.path, path));
+    for (const field of ['selected', 'current']) {
+      if (search[field] && !groups.some(group => group.hits.some((_, i) => hitKey(group.path, i) === search[field]))) {
+        search[field] = null;
+      }
+    }
+    if (mode === 'search') {
+      drawResults();
+      scheduleSearch(true);
+    }
     for (const history of [previous, next, closed]) {
       for (let i = history.length - 1; i >= 0; --i) {
         if (history[i].path && atOrUnder(history[i].path, path)) history.splice(i, 1);
@@ -2336,6 +2350,7 @@
       !t.pendingJournal && ['在 Finder 中显示', () => rpc('reveal', { path: t.path }), 'external'],
       /^html?$/.test(extOf(t.path)) && ['管理本地脚本信任…', trustReport, 'shield'],
       isReader(t.path) && ['复制当前位置引用', () => readerAction('copyReference'), 'link'],
+      !t.pendingJournal && trashMenuItem(t.path),
       null,
       ['关闭标签', () => serialize(() => closeTab(t)), 'close', '⌘W'],
     ]);

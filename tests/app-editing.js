@@ -45,16 +45,17 @@ const yamlPreview = host().querySelector('.md-meta-block');
 ok(yamlPreview.closest('.sima-page-header')?.contains(host().querySelector('h1')),
   'YAML 和标题之间夹有注释时仍共用页首');
 const yamlRow = yamlHandle.parentElement;
-ok(yamlPreview.hidden && !editor.getState().yamlPinned, 'YAML 默认自动隐藏');
+const markerVisible = () => !['none', 'normal'].includes(getComputedStyle(yamlHandle, '::before').content);
+ok(yamlPreview.hidden && !editor.getState().yamlPinned && markerVisible(), 'YAML 默认收起并显示细线');
 function leaveYamlRow() {
   yamlRow.dispatchEvent(new MouseEvent('mouseleave', {relatedTarget:yamlRow.parentElement}));
 }
 yamlRow.dispatchEvent(new MouseEvent('mouseenter'));
-ok(!yamlPreview.hidden, '悬停细线显示 YAML');
+ok(!yamlPreview.hidden && !markerVisible(), '悬停显示 YAML 并隐藏细线');
 yamlHandle.dispatchEvent(new MouseEvent('mouseleave', {relatedTarget:yamlPreview}));
 ok(!yamlPreview.hidden, '从细线移动到内容仍能阅读和点击');
 leaveYamlRow();
-ok(yamlPreview.hidden && yamlHandle.getAttribute('aria-expanded') === 'false', '移出 YAML 栏即收起预览');
+ok(yamlPreview.hidden && yamlHandle.getAttribute('aria-expanded') === 'false' && markerVisible(), '移出 YAML 栏即收起并恢复细线');
 yamlRow.dispatchEvent(new MouseEvent('mouseenter'));
 yamlHandle.click();
 leaveYamlRow();

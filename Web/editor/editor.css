@@ -59,10 +59,10 @@
   display:grid; place-items:center; width:64px; height:22px; padding:0;
   margin-inline:auto; border:0; border-radius:4px; background:transparent !important; cursor:pointer;
 }
-.sima-yaml-toggle::before {
+.sima-yaml-toggle[aria-expanded="false"]::before {
   content:""; width:32px; height:2px; background:var(--border); border-radius:1px;
 }
-.sima-yaml-toggle:is(:hover,:focus-visible,[aria-expanded="true"])::before { background:var(--muted); }
+.sima-yaml-toggle:is(:hover,:focus-visible)::before { background:var(--muted); }
 .sima-block .md-meta-block[hidden] { display:none !important; }
 .sima-editor::after { content:""; display:block; height:var(--outline-tail,0px); pointer-events:none; }
 /* The background follows the editor pane while text follows the reading column. */
@@ -132,7 +132,6 @@
     width: 2rem;
     height: 1rem;
   }
-  #write [data-kind="yaml"]:not(:hover,:focus-within) > .sima-yaml-toggle[aria-expanded="true"] { opacity: 0; }
 }
 .sima-block .yaml-key { color: var(--yaml-key, var(--accent)); }
 .sima-block .yaml-value { color: var(--yaml-value, var(--muted)); }

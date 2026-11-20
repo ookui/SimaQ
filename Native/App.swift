@@ -277,7 +277,7 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigatio
         case "saveSession":
             if let root = workspace.root, let session = args["session"] as? JSONObject { try data.write(data.sessionKey(root),session) }
             done()
-        case "save","createJournal":
+        case "save","createJournal","trash":
             io.async { [self] in
                 do {
                     let url = try workspace.fileURL(path)
@@ -285,7 +285,7 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigatio
                     if (result as? JSONObject)?["conflict"] as? Bool != true {
                         search.update(url)
                     }
-                    // Enqueue the index update before the client can issue its post-save query.
+                    // Enqueue the index update before the client's next query.
                     reply(.success(result))
                 } catch { reply(.failure(error)) }
             }

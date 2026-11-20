@@ -104,12 +104,12 @@ final class SearchService {
         exec("CREATE TABLE IF NOT EXISTS note_refs(source TEXT, name TEXT, raw TEXT, wiki INTEGER, line INTEGER, paragraph TEXT); CREATE INDEX IF NOT EXISTS refs_name ON note_refs(name); CREATE INDEX IF NOT EXISTS refs_source ON note_refs(source)")
         if ftsAvailable { exec("CREATE VIRTUAL TABLE IF NOT EXISTS search_han USING fts5(grams, tokenize='ascii', detail=none)") }
         var version: OpaquePointer?
-        let migrate = sqlite3_prepare_v2(db,"PRAGMA user_version",-1,&version,nil) == SQLITE_OK && sqlite3_step(version) == SQLITE_ROW && sqlite3_column_int(version,0) < 1
+        let migrate = sqlite3_prepare_v2(db,"PRAGMA user_version",-1,&version,nil) == SQLITE_OK && sqlite3_step(version) == SQLITE_ROW && sqlite3_column_int(version,0) < 2
         sqlite3_finalize(version)
         if migrate {
             exec("BEGIN; UPDATE docs SET mtime=-1; DELETE FROM note_refs")
             if ftsAvailable { exec("DELETE FROM search_han") }
-            exec("PRAGMA user_version=1; COMMIT")
+            exec("PRAGMA user_version=2; COMMIT")
         }
         synchronize()
     }
@@ -229,13 +229,13 @@ final class SearchService {
         sqlite3_step(s); sqlite3_finalize(s)
         if markdown.contains(ext) { indexReferences(pages[0], source:path) }
         if ftsAvailable {
+            let indexedPath = ChineseSearchForms.shared.key(path)
+            let content = indexedPath + "\n" + ChineseSearchForms.shared.key(pages.joined(separator:"\n"))
             var f: OpaquePointer?
             if sqlite3_prepare_v2(db, "INSERT INTO search_fts(rowid,content) SELECT rowid,? FROM docs WHERE path=?", -1, &f, nil) == SQLITE_OK {
-                let text = path + "\n" + pages.joined(separator:"\n")
-                sqlite3_bind_text(f,1,text,-1,transient); sqlite3_bind_text(f,2,path,-1,transient); sqlite3_step(f)
+                sqlite3_bind_text(f,1,content,-1,transient); sqlite3_bind_text(f,2,path,-1,transient); sqlite3_step(f)
             }
             sqlite3_finalize(f)
-            let content = path + "\n" + pages.joined(separator:"\n")
             let nsContent = content as NSString
             var grams = Set<String>()
             Self.hanRuns.enumerateMatches(in:content,range:NSRange(content.startIndex...,in:content)) { match,_,_ in
@@ -261,9 +261,9 @@ final class SearchService {
                     let headingRegex = try! NSRegularExpression(pattern:"(?m)^ {0,3}#{1,6}[\\t ].*$|^.+\\n {0,3}(?:=+|-+)[\\t ]*$")
                     headings = headingRegex.matches(in:pages[0],range:NSRange(location:0,length:source.length)).map { source.substring(with:$0.range) }
                 }
-                sqlite3_bind_text(m,1,(path as NSString).lastPathComponent,-1,transient)
-                sqlite3_bind_text(m,2,headings.joined(separator:"\n"),-1,transient)
-                sqlite3_bind_text(m,3,(path as NSString).deletingLastPathComponent,-1,transient)
+                sqlite3_bind_text(m,1,(indexedPath as NSString).lastPathComponent,-1,transient)
+                sqlite3_bind_text(m,2,ChineseSearchForms.shared.key(headings.joined(separator:"\n")),-1,transient)
+                sqlite3_bind_text(m,3,(indexedPath as NSString).deletingLastPathComponent,-1,transient)
                 sqlite3_bind_text(m,4,path,-1,transient); sqlite3_step(m)
             }
             sqlite3_finalize(m)
@@ -360,7 +360,7 @@ final class SearchService {
                     let mixed = transition.firstMatch(in:boundary,range:NSRange(boundary.startIndex...,in:boundary)) != nil
                     pattern += gap + (mixed ? "*" : "+")
                 }
-                pattern += word.map(NSRegularExpression.escapedPattern(for:)).joined(separator:gap + "*")
+                pattern += word.map(ChineseSearchForms.shared.literalPattern).joined(separator:gap + "*")
             }
         }
         guard !pattern.isEmpty else { return [] }
@@ -380,7 +380,7 @@ final class SearchService {
         let limit = max(1, min(payload["limit"] as? Int ?? 100, 1000))
         let hitLimit = max(1, payload["hitLimit"] as? Int ?? Int.max)
         let hitLimits = payload["hitLimits"] as? [String:Int] ?? [:]
-        let tokens = parts.flatMap { $0 }
+        let tokens = isRegex ? [] : parts.flatMap { $0 }.map(ChineseSearchForms.shared.key)
         let token = tokens.filter { $0.unicodeScalars.count >= 3 }.max { $0.unicodeScalars.count < $1.unicodeScalars.count }
         let hanToken = tokens.first { Self.shortHan.firstMatch(in:$0,range:NSRange($0.startIndex...,in:$0)) != nil }
         let shortLiteral = token == nil && hanToken != nil
@@ -484,6 +484,69 @@ final class SearchService {
         }
         groups.sort { $0.0 != $1.0 ? $0.0 > $1.0 : $0.1.localizedStandardCompare($1.1) == .orderedAscending }
         return groups.prefix(limit).map { $0.2 }
+    }
+}
+
+/// The index uses one scalar per group. The matcher uses the whole group on
+/// the original text so even variants with different UTF-16 widths locate correctly.
+private struct ChineseSearchForms {
+    static let shared = ChineseSearchForms()
+    private let representatives: [Unicode.Scalar:Unicode.Scalar]
+    private let alternatives: [Unicode.Scalar:String]
+
+    private init() {
+        let ideographs = (0...0x10ffff).compactMap(Unicode.Scalar.init).filter { $0.properties.isIdeographic }
+        var parents = [Unicode.Scalar:Unicode.Scalar]()
+        func representative(_ scalar: Unicode.Scalar) -> Unicode.Scalar {
+            var root = scalar
+            while let parent = parents[root] { root = parent }
+            return root
+        }
+        // Use the system's ICU character mappings. Separating characters prevents
+        // phrase transliteration from changing how a substring is indexed.
+        let transform = StringTransform("Traditional-Simplified")
+        for start in stride(from: 0, to: ideographs.count, by: 4096) {
+            let batch = ideographs[start..<min(start + 4096, ideographs.count)]
+            let input = batch.map(String.init).joined(separator:"\n")
+            guard let converted = input.applyingTransform(transform, reverse:false) else { continue }
+            for (source, form) in zip(batch, converted.split(separator:"\n", omittingEmptySubsequences:false)) {
+                guard form.unicodeScalars.count == 1, let target = form.unicodeScalars.first,
+                      target != source else { continue }
+                // A few system mappings are reciprocal. Merge both sets once.
+                let a = representative(source), b = representative(target)
+                if a != b { parents[a] = b }
+            }
+        }
+        var keys = [Unicode.Scalar:Unicode.Scalar]()
+        var groups = [Unicode.Scalar:String]()
+        for variant in parents.keys {
+            let key = representative(variant)
+            keys[variant] = key
+            groups[key, default:String(key)].unicodeScalars.append(variant)
+        }
+        representatives = keys
+        alternatives = groups
+    }
+
+    func key(_ text: String) -> String {
+        let scalars = text.unicodeScalars
+        guard let first = scalars.firstIndex(where: { !$0.isASCII && representatives[$0] != nil }) else { return text }
+        var result = String(scalars[..<first])
+        for scalar in scalars[first...] { result.unicodeScalars.append(representatives[scalar] ?? scalar) }
+        return result
+    }
+
+    func literalPattern(_ text: String) -> String {
+        var result = "", literal = ""
+        for scalar in text.unicodeScalars {
+            if let group = alternatives[representatives[scalar] ?? scalar] {
+                result += NSRegularExpression.escapedPattern(for:literal) + "[" + group + "]"
+                literal = ""
+            } else {
+                literal.unicodeScalars.append(scalar)
+            }
+        }
+        return result + NSRegularExpression.escapedPattern(for:literal)
     }
 }
 
