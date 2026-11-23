@@ -1,11 +1,15 @@
 import AppKit
+import ImageIO
 import WebKit
 import UniformTypeIdentifiers
 
 final class AssetHandler: NSObject, WKURLSchemeHandler {
     let workspace: Workspace
     init(workspace: Workspace) { self.workspace = workspace }
-    private static let imageTypes = ["png":"image/png","apng":"image/apng","jpg":"image/jpeg","jpeg":"image/jpeg","gif":"image/gif","svg":"image/svg+xml","webp":"image/webp","avif":"image/avif","heic":"image/heic","tif":"image/tiff","tiff":"image/tiff","bmp":"image/bmp","ico":"image/x-icon"]
+    private static let imageTypes = ["png":"image/png","apng":"image/apng","jpg":"image/jpeg","jpeg":"image/jpeg","gif":"image/gif","svg":"image/svg+xml","webp":"image/webp","avif":"image/avif","heic":"image/heic","heif":"image/heif","jfif":"image/jpeg","tif":"image/tiff","tiff":"image/tiff","bmp":"image/bmp","ico":"image/x-icon"]
+    static func isImageExtension(_ ext: String) -> Bool {
+        imageTypes[ext] != nil || ext == "svgz" || ext == "heif" || UTType(filenameExtension:ext)?.conforms(to:.image) == true
+    }
     static func image(_ request: URL, workspace: Workspace) throws -> (Data, String) {
         guard request.scheme == "simaq-asset", request.host == "workspace" else { throw URLError(.badURL) }
         var file = try workspace.fileURL(String(request.path.dropFirst()))
@@ -42,7 +46,16 @@ final class AssetHandler: NSObject, WKURLSchemeHandler {
     func webView(_ webView: WKWebView, start task: WKURLSchemeTask) {
         do {
             guard let request = task.request.url else { throw URLError(.badURL) }
-            let (data,mime) = try Self.image(request,workspace:workspace)
+            var (data,mime) = try Self.image(request,workspace:workspace)
+            // Older WebKit versions cannot display every encoding that macOS can read.
+            if URLComponents(url:request,resolvingAgainstBaseURL:false)?.queryItems?.contains(URLQueryItem(name:"preview",value:"png")) == true {
+                guard let source = CGImageSourceCreateWithData(data as CFData,nil),
+                      let bitmap = CGImageSourceCreateImageAtIndex(source,0,nil),
+                      let png = NSBitmapImageRep(cgImage:bitmap).representation(using:.png,properties:[:])
+                else { throw URLError(.cannotDecodeContentData) }
+                data = png
+                mime = "image/png"
+            }
             task.didReceive(URLResponse(url:request,mimeType:mime,expectedContentLength:data.count,textEncodingName:nil))
             task.didReceive(data)
             task.didFinish()

@@ -19,6 +19,64 @@
     while (oldEnd > from && newEnd > from && before[oldEnd-1] === after[newEnd-1]) {oldEnd--; newEnd--;}
     return {from, oldEnd, inserted:after.slice(from, newEnd)};
   }
+  // Token ranges distinguish real list items from lookalike lines in code blocks.
+  function listOutdentEdits(text, blocks, from, to) {
+    const edits = new Map();
+    function paragraphBreak(at) {
+      if (!at || at >= text.length) return;
+      const newline = text.slice(at - 2, at) === '\r\n' ? '\r\n' : text[at - 1];
+      const end = at - newline.length;
+      let p = end;
+      while (p && /[ \t]/.test(text[p - 1])) p--;
+      let next = at;
+      while (next < text.length && /[ \t]/.test(text[next])) next++;
+      if (!p || next === text.length || /[\r\n]/.test(text[p - 1]) || /[\r\n]/.test(text[next])) return;
+      const edit = edits.get(at) || {at, remove:0, insert:''};
+      edit.separator = newline;
+      edits.set(at, edit);
+    }
+    for (const block of blocks) {
+      if (!block.listItems || block.end < from || (from === to ? block.start > to : block.start >= to)) continue;
+      const parents = [];
+      let at = block.start, index = 0, previousPlain = false;
+      for (const [i, line] of block.source.split(/\r\n|\r|\n/).entries()) {
+        while (parents.length && parents.at(-1).until <= i) parents.pop();
+        let parent = parents.at(-1);
+        const selected = from <= at + line.length && (from === to ? at <= to : at < to);
+        if (block.listItems[index]?.line === i) {
+          const token = block.listItems[index++];
+          // Two markers can share a physical line. Lift its outer item once.
+          while (block.listItems[index]?.line === i) index++;
+          const marker = /^([ \t]*)(?:[-*+]|\d+[.)])(?:[ \t]+|$)(?:\[[ xX]\](?:[ \t]+|$))?/.exec(line);
+          const direct = token.level === (parent ? parent.level + 2 : 1);
+          const item = {...token, indent:marker?.[1] || '', shift:0, plain:false};
+          if (selected && marker && direct) {
+            item.plain = !parent;
+            const remove = item.plain ? marker[0].length : item.indent.length;
+            let insert = parent?.indent || '';
+            if (parent?.promotedIndent !== undefined && item.indent.startsWith(parent.indent)) {
+              insert = parent.promotedIndent + item.indent.slice(parent.indent.length);
+            }
+            edits.set(at, {at, remove, insert});
+            if (parent) item.promotedIndent = insert;
+            item.shift = remove - insert.length;
+            if (item.plain) paragraphBreak(at);
+          }
+          if (previousPlain) paragraphBreak(at);
+          parents.push(item);
+          parent = item;
+        } else if (selected && parent?.shift > 0) {
+          const remove = Math.min(parent.shift, /^[ \t]*/.exec(line)[0].length);
+          if (remove) edits.set(at, {at, remove, insert:''});
+        }
+        previousPlain = !!parent?.plain;
+        at += line.length;
+        at += text.startsWith('\r\n', at) ? 2 : 1;
+      }
+      if (previousPlain) paragraphBreak(at);
+    }
+    return [...edits.values()].sort((a,b) => a.at - b.at);
+  }
   function create(host, options = {}) {
     let text = String(options.text ?? ''), source = !!options.literal, yamlCollapsed = options.settings?.autoHideYaml !== false;
     const folderName = (options.path?.split('/').at(-2) || options.workspaceName || '').toLowerCase();
@@ -43,7 +101,7 @@
       const input = imageCaption;
       if (!input) return;
       imageCaption = null;
-      input.remove();
+      input.parentElement?.remove();
       input.finishImageEdit();
     }
     const detachScrollbar = window.SimaScrollbar.attach(viewport);
@@ -490,6 +548,29 @@
       write(from,to,next,{anchor:from+convert(cursor),head:from+convert(end)});
       draw(true,true);reveal(typewriter?'center':'nearest');
     }
+    function outdentList() {
+      const edits = listOutdentEdits(text, parseBlocks(), ...range());
+      if (!edits.length) return false;
+      const start = edits[0].at;
+      let end = start, inserted = '';
+      function mapped(offset) {
+        let delta = 0;
+        for (const {at, remove, insert, separator = ''} of edits) {
+          if (offset < at) break;
+          if (offset <= at + remove) return at + delta + separator.length + Math.min(offset - at, insert.length);
+          delta += separator.length + insert.length - remove;
+        }
+        return offset + delta;
+      }
+      for (const {at, remove, insert, separator = ''} of edits) {
+        inserted += text.slice(end, at) + separator + insert;
+        end = at + remove;
+      }
+      beforeSelection = null;
+      write(start, end, inserted, {anchor:mapped(selection.anchor), head:mapped(selection.head)});
+      draw(true, true, false);
+      return true;
+    }
     function history(reverse) {
       beforeSelection=null;
       const src=reverse?redo:undo,dest=reverse?undo:redo,entry=src.pop();
@@ -521,6 +602,15 @@
       if(b>a) {currentHit={start:a,length:b-a};if(!hits.some(h=>sameHit(h,currentHit)))hits=[currentHit];}
       choose(a,b,true,true);
       paintInput();highlightRendered();reveal('center');
+    }
+    function goToBeginning(ranges = []) {
+      if (composing) { pendingActions.push(() => goToBeginning(ranges)); return; }
+      pick(0,0);
+      if (source || active || activeTable) draw(source,false);
+      currentHit=null;
+      setHighlights(ranges,null);
+      pendingScroll=0;
+      syncVisible();
     }
     function showSearchResult(ranges,hit) {
       if (composing) { pendingActions.push(()=>showSearchResult(ranges,hit)); return; }
@@ -802,7 +892,7 @@
       const start = model?.rows[cell.dataset.row]?.[cell.dataset.column]?.start;
       return start == null ? null : block.start + start + offset;
     }
-    function editImageSource(frame) {
+    function editImageSource(frame, top) {
       const grip = frame.querySelector('.sima-image-grip'), img = frame.querySelector('img');
       const block = blocks.find(b => b.node === frame.closest('.sima-block'));
       const imageSyntaxEnd = imageEnd(grip);
@@ -817,13 +907,13 @@
       const start = block.start + rawOffset(raw, offset);
       const cell = frame.closest('[data-row][data-column]');
       const localStart = Number(grip.dataset.offset) - normalize(text.slice(start, imageSyntaxEnd)).length;
+      const caption = element('span', 'sima-image-source');
       const input = element('textarea', 'sima-image-caption');
       input.rows = 1;
-      input.wrap = 'off';
       input.spellcheck = false;
       input.setAttribute('aria-label', 'Markdown');
       input.value = text.slice(start, end);
-      input.style.setProperty('--image-source-width', Math.max(22,input.value.length + 2) + 'ch');
+      caption.dataset.source = input.value;
       const context = {...block.context, ...renderOptions, editableImages:true};
       let length = end - start, edited = false;
       function renderValue() {
@@ -840,6 +930,7 @@
         outer.replaceWith(renderValue());
       };
       function update(record = true) {
+        caption.dataset.source = input.value;
         const old = text.slice(start, start + length);
         if (normalize(old) === input.value) return;
         const value = input.value.replace(/\n/g, eol(old.includes('\n') ? old : text));
@@ -893,7 +984,10 @@
       };
       input.onselect = selectSource;
       input.onbeforeinput = selectSource;
-      input.oninput = e => { if (!e.isComposing) update(); };
+      input.oninput = e => {
+        if (e.isComposing) caption.dataset.source = input.value;
+        else update();
+      };
       input.oncompositionend = () => update();
       input.onkeydown = e => {
         if (!e.isComposing && !composing && ['Enter','Escape'].includes(e.key)) {
@@ -903,8 +997,8 @@
       };
       for (const event of ['copy','cut','paste','dblclick']) input.addEventListener(event,e=>e.stopPropagation());
       imageCaption = input;
-      const top = img.getBoundingClientRect().top;
-      frame.prepend(input);
+      caption.append(input);
+      frame.prepend(caption);
       activeTable = null;
       input.focus({preventScroll:true});
       input.setSelectionRange(input.value.length,input.value.length);
@@ -996,9 +1090,10 @@
       if ((e.metaKey || e.ctrlKey) && frame.closest('a[href]')) return;
       e.preventDefault(); e.stopPropagation();
       if (composing || frame.contains(imageCaption)) return;
+      const top = frame.querySelector('img').getBoundingClientRect().top;
       clearImageSelection();
       if (active) finishBlock();
-      editImageSource(frame);
+      editImageSource(frame,top);
     }, {capture:true});
     on(doc, 'dblclick', e => {
       const grip = e.target.closest('.sima-image-grip');
@@ -1101,6 +1196,19 @@
     on(viewport,'focusin',e=>{
       if(e.target===viewport && !pointerFocusing && viewport.matches(':focus-visible') && !field && !composing && !activeTable)focus();
     });
+    // A selection dragged across rendered blocks can leave keyboard focus on the page body.
+    on(document,'keydown',e=>{
+      if (e.key!=='Tab' || !e.shiftKey || e.metaKey || e.ctrlKey || e.altKey || options.literal ||
+          composing || e.isComposing || e.keyCode===229 || e.defaultPrevented) return;
+      if (e.target!==field) {
+        if (e.target!==document.body && e.target!==document.documentElement && !viewport.contains(e.target)) return;
+        if (e.target.closest?.('button,input,textarea,[contenteditable],.sima-table-block')) return;
+        const dom=window.getSelection();
+        if (!dom || dom.isCollapsed || !doc.contains(dom.anchorNode) || !doc.contains(dom.focusNode)) return;
+      }
+      readSelection();
+      if (outdentList()) {e.preventDefault();e.stopPropagation();}
+    });
     on(viewport,'keydown',e=>{
       if(composing||e.isComposing||e.keyCode===229||e.defaultPrevented)return;
       const key=e.key, cmd=e.metaKey||e.ctrlKey;
@@ -1152,22 +1260,90 @@
         }
       }
     });
-    on(viewport,'paste',async e=>{
-      if(composing||e.defaultPrevented||e.target===imageCaption)return;
-      const files=[...(e.clipboardData?.files || [])].filter(f=>f.type.startsWith('image/'));
-      if(!files.length || !options.onAsset)return;
-      e.preventDefault();readSelection();
-      const [a,b]=range(),p={a,b};pendingAssets.add(p);
+    on(doc,'error',e=>{
+      const img = e.target;
+      if (!img.matches?.('img[data-markdown-src]') || !img.src.startsWith('simaq-asset://')) return;
+      const url = new URL(img.src);
+      if (!/\.(?:hei[cf]|tiff?|avif|bmp|ico|jfif|webp|jxl|jp2)$/i.test(url.pathname) || url.searchParams.has('preview')) return;
+      url.searchParams.set('preview','png');
+      img.src = url.href;
+    },{capture:true});
+    function imageFiles(transfer) {
+      const files = Array.from(transfer?.files || []);
+      return files.filter(file => file.type.startsWith('image/') ||
+        /\.(?:png|apng|jpe?g|jfif|jp2|jxl|gif|webp|avif|hei[cf]|tiff?|bmp|ico|svg)$/i.test(file.name));
+    }
+    async function insertImages(files, a, b, preview, separateParagraph = false) {
+      const anchor = {a,b}, links = [];
+      pendingAssets.add(anchor);
+      let failure;
       try {
-        const links=[];
-        for(const file of files){
-          const path=await options.onAsset(file);
-          if(path)links.push('!['+(file.name||'截图').replace(/[\\\[\]]/g,'\\$&')+']('+String(path).replace(/\(/g,'%28').replace(/\)/g,'%29')+')');
+        for (const file of files) {
+          if (destroyed) break;
+          const path = await options.onAsset(file);
+          const label = (file.name || '截图').replace(/[\r\n]+/g,' ').replace(/[\\\[\]]/g,'\\$&');
+          if (path) links.push('![' + label + '](' + path + ')');
         }
-        pendingAssets.delete(p);
-        if(!destroyed && links.length)replace(p.a,p.b,links.join(eol()));
-      }catch(error){(options.onError||window.alert)(String(error?.message||error));}
-      finally{pendingAssets.delete(p);}
+      } catch (error) { failure = error; }
+      finally { pendingAssets.delete(anchor); }
+      if (!destroyed && links.length) {
+        const trailing = separateParagraph && anchor.a ? normalize(text.slice(0,anchor.a)).match(/\n*$/)[0].length : 2;
+        const value = eol().repeat(Math.max(0,2-trailing)) + links.join(eol());
+        if (preview && !source) {
+          const end = anchor.a + value.length;
+          write(anchor.a,anchor.b,value,{anchor:end,head:end});
+          draw(false);
+        } else replace(anchor.a,anchor.b,value);
+      }
+      if (failure) (options.onError || window.alert)(String(failure.message || failure));
+    }
+    function imageDropPoint(e) {
+      if (field && e.target === field) {
+        // WebKit exposes the textarea's host at the pointer. Its mirror has the
+        // same line breaks and glyph positions, including highlighted spans.
+        field.style.pointerEvents = 'none';
+        mirror.style.pointerEvents = 'auto';
+        mirror.style.webkitUserSelect = 'text';
+        try {
+          const caret = rangeAtPoint(e.clientX,e.clientY);
+          if (caret && mirror.contains(caret.startContainer)) {
+            const prefix = document.createRange();
+            prefix.selectNodeContents(mirror);
+            prefix.setEnd(caret.startContainer,caret.startOffset);
+            const raw = text.slice(active.start,active.end);
+            return Math.min(active.end,active.start + rawOffset(raw,prefix.toString().length));
+          }
+          return active.end;
+        } finally {
+          field.style.removeProperty('pointer-events');
+          mirror.style.removeProperty('pointer-events');
+          mirror.style.removeProperty('-webkit-user-select');
+        }
+      }
+      if (e.target.closest('.sima-end-entry')) return text.length;
+      return hitPoint(e.clientX,e.clientY) ?? (e.clientY < doc.getBoundingClientRect().top ? 0 : text.length);
+    }
+    on(viewport,'dragover',e=>{
+      if (!options.onAsset || !e.dataTransfer?.types.includes('Files') || e.target.closest('.sima-references,dialog')) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    });
+    on(viewport,'drop',e=>{
+      if (!options.onAsset || e.target.closest('.sima-references,dialog')) return;
+      const files = imageFiles(e.dataTransfer);
+      if (!files.length) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const at = imageDropPoint(e);
+      void insertImages(files,at,at,true,!!e.target.closest('.sima-end-entry'));
+    },{capture:true});
+    on(viewport,'paste',e=>{
+      if (composing || e.defaultPrevented || e.target === imageCaption || !options.onAsset) return;
+      const files = imageFiles(e.clipboardData);
+      if (!files.length) return;
+      e.preventDefault();
+      readSelection();
+      void insertImages(files,...range(),false);
     },{capture:true});
     // A drag starting inside an active native textarea cannot extend outside it without a source-level continuation.
     let drag=null;
@@ -1185,7 +1361,7 @@
       path:options.path, getText:()=>text, locate,
       replace:next=>replace(0,text.length,next,0)
     });
-    return {getText:()=>text,setText,getState,setState,focus,locate,outlineLocations,centeredHeading,goToHeading,showSearchResult,action,setHighlights,
+    return {getText:()=>text,setText,getState,setState,focus,locate,outlineLocations,centeredHeading,goToHeading,goToBeginning,showSearchResult,action,setHighlights,
       refreshImages(wikiOnly = false){
         const selector = wikiOnly ? 'img[data-wiki-image]' : 'img[data-markdown-src]';
         for (const img of doc.querySelectorAll(selector)) {

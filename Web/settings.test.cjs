@@ -6,6 +6,8 @@ const api = globalThis.SimaSettings;
 test('command IDs are unique and default shortcuts have no conflict', () => {
   assert.equal(new Set(api.commands.map(c => c.id)).size, api.commands.length);
   assert.deepEqual(api.bindingConflicts(), []);
+  assert.equal(api.binding('view.graph'), 'Cmd+G');
+  assert.equal(api.settings.graphJournals, false);
   assert.equal(api.binding('search.workspace'), 'Cmd+Shift+F');
   assert.ok(['应用','文件','编辑','段落','格式','表格','视图','导航','主题','窗口','帮助'].every(menu => api.commands.some(c => c.menu === menu)));
 });

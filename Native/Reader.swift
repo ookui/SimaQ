@@ -379,11 +379,18 @@ final class ReaderController: NSObject, WKNavigationDelegate, WKUIDelegate, PDFV
     }
     @objc private func printDocument() { if let image = image { image.printImage() } else if let p = pdf { p.print(with: NSPrintInfo.shared, autoRotate: true) } else if let w = web { w.printOperation(with: NSPrintInfo.shared).run() } }
     func action(_ name: String, payload: [String: Any]) {
-        if image != nil && ["locate", "anchor", "find"].contains(name) { return }
-        if documentURL?.pathExtension.lowercased() != "pdf", !webReady, ["locate", "anchor", "find"].contains(name) {
+        if image != nil && ["locate", "anchor", "find", "beginning"].contains(name) { return }
+        if documentURL?.pathExtension.lowercased() != "pdf", !webReady, ["locate", "anchor", "find", "beginning"].contains(name) {
             pendingActions.append((name, payload)); return
         }
         switch name {
+        case "beginning":
+            if let p = pdf, let page = p.document?.page(at:0) {
+                p.clearSelection()
+                let bounds = page.bounds(for:p.displayBox)
+                p.go(to:PDFDestination(page:page,at:CGPoint(x:bounds.minX,y:bounds.maxY)))
+            }
+            else { runJS("window.getSelection()?.removeAllRanges(); window.scrollTo({top:0,left:0,behavior:'instant'})") }
         case "locate": locate(payload)
         case "anchor":
             let fragment = payload["fragment"] as? String ?? ""

@@ -302,11 +302,36 @@ final class SearchService {
             sqlite3_bind_int64(stmt,5,Int64(link.line)); sqlite3_bind_text(stmt,6,paragraph,-1,transient); sqlite3_step(stmt)
         }
     }
+    private func matchesRoot(_ expected: String) -> Bool {
+        guard !expected.isEmpty else { return false }
+        return root?.path == URL(fileURLWithPath:expected,isDirectory:true).resolvingSymlinksInPath().standardizedFileURL.path
+    }
+    func graphLinks(root expected: String, completion: @escaping (Result<[[String:Any]],Error>) -> Void) {
+        queue.async {
+            var statement: OpaquePointer?
+            defer { sqlite3_finalize(statement) }
+            guard self.matchesRoot(expected),
+                  sqlite3_prepare_v2(self.db, "SELECT DISTINCT source,raw,wiki FROM note_refs", -1, &statement, nil) == SQLITE_OK else {
+                completion(.failure(NSError(domain:"SimaQ.Graph",code:1,userInfo:[NSLocalizedDescriptionKey:"链接索引不可用。"])))
+                return
+            }
+            var links = [[String:Any]]()
+            var step = sqlite3_step(statement)
+            while step == SQLITE_ROW {
+                links.append(["path":String(cString:sqlite3_column_text(statement,0)),
+                              "raw":String(cString:sqlite3_column_text(statement,1)),
+                              "wiki":sqlite3_column_int(statement,2) != 0])
+                step = sqlite3_step(statement)
+            }
+            if step == SQLITE_DONE { completion(.success(links)) }
+            else { completion(.failure(NSError(domain:"SimaQ.Graph",code:Int(step),userInfo:[NSLocalizedDescriptionKey:"读取链接索引失败。"]))) }
+        }
+    }
     func references(names: [String], root expected: String, completion: @escaping ([[String:Any]]) -> Void) {
         queue.async {
             var rows = [[String:Any]]()
             defer { let result = rows; DispatchQueue.main.async { completion(result) } }
-            guard self.root?.path == expected, !names.isEmpty else { return }
+            guard self.matchesRoot(expected), !names.isEmpty else { return }
             var stmt: OpaquePointer?
             let slots = names.map { _ in "?" }.joined(separator:",")
             let sql = "SELECT source,raw,wiki,line,paragraph FROM note_refs WHERE name IN (\(slots)) ORDER BY source,line"

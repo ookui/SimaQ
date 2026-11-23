@@ -4,6 +4,18 @@
   const labels = new Map();
   function add(hans,en,hant) { labels.set(hans,{en,'zh-Hant':hant}); }
   [
+    ['知识库关系图','Knowledge Graph','知識庫關係圖'],
+    ['关系图','Graph','關係圖'],
+    ['在关系图中显示日记','Show Journals in Graph','在關係圖中顯示日記'],
+    ['节点','nodes','節點'],
+    ['关系','links','關係'],
+    ['没有可显示的节点','No nodes to display','沒有可顯示的節點'],
+    ['正在读取链接…','Loading links…','正在讀取連結…'],
+    ['拖动节点调整布局 · 拖动空白处平移 · 滚轮缩放','Drag nodes to rearrange · Drag background to pan · Scroll to zoom','拖曳節點調整佈局 · 拖曳空白處平移 · 滾輪縮放'],
+    ['展开搜索结果','Expand matches','展開搜尋結果'],
+    ['折叠搜索结果','Collapse matches','摺疊搜尋結果'],
+    ['放大图谱','Zoom in','放大圖譜'],
+    ['缩小图谱','Zoom out','縮小圖譜'],
     ['今天','Today','今天'],
     ['日记目录…','Journal Folder…','日記資料夾…'],
     ['当前日记目录','Current journal folder','目前日記資料夾'],

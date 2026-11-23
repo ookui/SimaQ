@@ -4,7 +4,7 @@
   const scriptBase = typeof document !== 'undefined' ? new URL('.', document.currentScript?.src || location.href).href : '';
   const defaults = {
     menuLanguage: 'system', appearance: 'system', lightTheme: 'Tana Light', darkTheme: 'Neutral Dark',
-    typography: {}, bindings: {}, userCSS: '', autoHideYaml: true,
+    typography: {}, bindings: {}, userCSS: '', autoHideYaml: true, graphJournals: false,
     attachmentFolder: 'attachments', attachmentPath: 'relative',
     mouseScrollSpeed: 1.5, trackpadScrollSpeed: 1,
   };
@@ -30,6 +30,7 @@
     ['table.moveRowUp','上移一行','表格',''], ['table.moveRowDown','下移一行','表格',''], ['table.moveColumnLeft','左移一列','表格',''], ['table.moveColumnRight','右移一列','表格',''],
     ['table.alignLeft','列左对齐','表格',''], ['table.alignCenter','列居中','表格',''], ['table.alignRight','列右对齐','表格',''],
     ['view.source','切换源码模式','视图','Cmd+/'], ['view.outline','显示大纲','视图','Cmd+Shift+O'], ['view.sidebar','显示侧栏','视图','Cmd+\\'],
+    ['view.graph','知识库关系图','视图','Cmd+G'], ['view.graphJournals','在关系图中显示日记','视图',''],
     ['view.scrollSpeed','滚动速度…','视图',''],
     ['view.focus','专注模式','视图',''], ['view.typewriter','打字机模式','视图',''], ['view.yaml','折叠／展开元数据','视图','Cmd+Alt+Y'],
     ['navigate.backlinks','查看反向链接','导航',''], ['navigate.repair','修复失效链接…','导航',''],
@@ -104,8 +105,9 @@
     if (id === 'file.reopenTab') return !!ctx.canReopen;
     if (['file.save','file.saveAs','file.exportHTML','file.exportPDF'].includes(id)) return !!ctx.hasEditor;
     if (/^(paragraph|format|table)\./.test(id) || ['template.insert','edit.link','view.source','view.outline','view.focus','view.typewriter','view.yaml'].includes(id)) return !!ctx.markdown;
+    if (id==='file.closeTab' && ctx.graph) return true;
     if (['file.closeTab','file.print','edit.find','navigate.backlinks'].includes(id)) return !!ctx.path;
-    if (['file.new','file.exclusions','file.journalFolder','template.create','navigate.repair'].includes(id)) return !!ctx.root;
+    if (['file.new','file.exclusions','file.journalFolder','template.create','navigate.repair','view.graph'].includes(id)) return !!ctx.root;
     return true;
   }
   let lastMenu = '';
@@ -115,7 +117,7 @@
     const snapshot = [];
     for (const c of commands) {
       if (c.group === '主题' && c.id !== 'theme.settings') continue;
-      snapshot.push({...c,key:binding(c.id)});
+      snapshot.push({...c,key:binding(c.id),...(c.id==='view.graphJournals'?{checked:!!settings.graphJournals}:{})});
       if (c.id === 'theme.settings') {
         for (const [index, theme] of themes.entries()) {
           snapshot.push({
@@ -169,6 +171,11 @@
   }
   async function execute(id,arg) {
     if(id==='app.settings')return open();
+    if(id==='view.graphJournals') {
+      settings.graphJournals=!settings.graphJournals;
+      await persist();
+      return host?.refreshGraph?.();
+    }
     if(id==='file.images')return open('images');
     if(id==='file.exclusions')return open('workspace');
     if(id==='theme.settings')return open('appearance');

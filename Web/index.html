@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' simaq-asset: data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'"
+      content="default-src 'none'; worker-src blob:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' simaq-asset: data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'"
     >
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>SimaQ</title>
@@ -33,6 +33,7 @@
         <nav class="side-switch" aria-label="侧栏视图">
           <button data-mode="tree"><span data-icon="folders"></span><span data-menu-text="浏览目录">目录</span></button>
           <button data-mode="search"><span data-icon="search"></span><span data-menu-text="搜索">搜索</span></button>
+          <button id="graphButton" data-mode="graph" data-run="view.graph" data-menu-title="知识库关系图" title="知识库关系图"><span data-icon="graph"></span><span data-menu-text="关系图">关系图</span></button>
         </nav>
         <div id="sideContent"></div>
         <div class="side-foot">
@@ -95,6 +96,8 @@
     <script src="editor/file-preview.js"></script>
     <script src="menu-language.js"></script>
     <script src="settings.js"></script>
+    <script src="graph-layout.js"></script>
+    <script src="graph.js"></script>
     <script src="shell.js"></script>
   </body>
 </html>

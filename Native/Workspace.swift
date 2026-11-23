@@ -280,7 +280,7 @@ final class Workspace {
             let result = try doc.encoded(text); if bytes != result { try result.write(to:url,options:.atomic) }; return ["path":path,"version":wsHash(result)]
         }
     }
-    private func resolve(_ raw: String, wiki: Bool, from source: String, files: Set<String>) -> WSResolution {
+    private func resolve(_ raw: String, wiki: Bool, from source: String, files: Set<String>, lookup: ((String) -> [String])? = nil) -> WSResolution {
         let trimmed = raw.trimmingCharacters(in:.whitespacesAndNewlines)
         let parts = trimmed.split(separator:"#",maxSplits:1,omittingEmptySubsequences:false)
         let fragment = parts.count > 1 ? String(parts[1]) : ""
@@ -295,10 +295,56 @@ final class Workspace {
         else if wiki {
             if path.contains("/"), let exact = existing(rootPath) { candidates = [exact] }
             else if !path.contains("/") {
+                if let lookup { return WSResolution(paths:lookup(path),fragment:fragment) }
                 candidates = files.filter { wsName($0).caseInsensitiveCompare(path) == .orderedSame || (wsMarkdown.contains(wsExt($0)) && wsStem($0).caseInsensitiveCompare(path) == .orderedSame) }.sorted()
                 if candidates.isEmpty { candidates = files.filter { wsMarkdown.contains(wsExt($0)) && title($0).caseInsensitiveCompare(path) == .orderedSame }.sorted() }
             }
         }; return WSResolution(paths:candidates,fragment:fragment)
+    }
+    private func workspaceGraph(_ args: WSRow) throws -> WSRow {
+        guard args["root"] as? String == directory?.path else { throw wsError("工作区已切换。") }
+        let files = Set(try entries().filter { !$0.dir }.map(\.path))
+        let folder = args["journalFolder"] as? String
+        let hideJournals = args["includeJournals"] as? Bool != true
+        let imageExtensions = Set(files.map(wsExt)).filter(AssetHandler.isImageExtension)
+        let paths = files.filter { path in
+            if imageExtensions.contains(wsExt(path)) { return false }
+            if hiddenFolders.contains(where:{ wsUnder(path,$0) }) { return false }
+            if hideJournals, let folder, folder.isEmpty || wsUnder(path,folder), isJournalNote(path) { return false }
+            return true
+        }.sorted()
+        let positions = Dictionary(uniqueKeysWithValues:paths.enumerated().map { ($0.element,$0.offset) })
+        // Resolve against the workspace before filtering endpoints. Hiding a folder
+        // must never redirect an ambiguous wiki link to another file.
+        var names = [String:[String]](), titles: [String:[String]]?
+        for path in files {
+            names[wsName(path).lowercased(),default:[]].append(path)
+            if wsMarkdown.contains(wsExt(path)) { names[wsStem(path).lowercased(),default:[]].append(path) }
+        }
+        func lookup(_ value: String) -> [String] {
+            let key = value.lowercased()
+            if let hits = names[key] { return hits }
+            if titles == nil {
+                titles = Dictionary(grouping:files.filter { wsMarkdown.contains(wsExt($0)) },by:{ title($0).lowercased() })
+            }
+            return titles?[key] ?? []
+        }
+        var edges = [Int:Set<Int>]()
+        let buffers = args["buffers"] as? [String:String] ?? [:]
+        var links = (args["links"] as? [WSRow] ?? []).filter { buffers[$0["path"] as? String ?? ""] == nil }
+        for (path,text) in buffers where positions[path] != nil {
+            links += WSLinks.parse(text).map { ["path":path,"raw":$0.raw,"wiki":$0.wiki] }
+        }
+        for link in links {
+            guard let source = link["path"] as? String, let from = positions[source], let raw = link["raw"] as? String else { continue }
+            let found = resolve(raw,wiki:link["wiki"] as? Bool ?? false,from:source,files:files,lookup:lookup)
+            if found.paths.count == 1, let to = positions[found.paths[0]], from != to { edges[from,default:[]].insert(to) }
+        }
+        return ["nodes":paths.map { ["path":$0,"title":title($0)] },
+                "edges":edges.keys.sorted().flatMap { from in edges[from]!.sorted().map { [from,$0] } }]
+    }
+    private func isJournalNote(_ path: String) -> Bool {
+        wsMarkdown.contains(wsExt(path)) && !["readme","index","_template","template"].contains(wsStem(path).lowercased())
     }
     private func reformat(_ l: WSLink, target: String, from source: String, files: Set<String>) -> String {
         let parts = l.raw.split(separator:"#",maxSplits:1,omittingEmptySubsequences:false), anchor = parts.count > 1 ? "#" + String(parts[1]) : ""
@@ -351,7 +397,7 @@ final class Workspace {
             let attrs = try url.resourceValues(forKeys:keys)
             let path = String(url.path.dropFirst(base.path == "/" ? 1 : base.path.count + 1))
             if attrs.isSymbolicLink == true || hiddenFolders.contains(path) { urls.skipDescendants(); continue }
-            guard attrs.isRegularFile == true, wsMarkdown.contains(wsExt(path)), !["readme","index","_template","template"].contains(wsStem(path).lowercased()) else { continue }
+            guard attrs.isRegularFile == true, isJournalNote(path) else { continue }
             if let item = journalCache[path], item.0 == attrs.contentModificationDate, item.1 == attrs.fileSize { rows.append(item.2); continue }
             let data = try Data(contentsOf:fileURL(path))
             let note = try? NoteMetadata(WSText(data).text)
@@ -579,6 +625,7 @@ final class Workspace {
             if raw.hasPrefix("[["), raw.hasSuffix("]]") { wiki = true; raw = String(raw.dropFirst(2).dropLast(2).split(separator:"|",maxSplits:1,omittingEmptySubsequences:false).first ?? "") }
             let found = resolve(raw,wiki:wiki,from:p,files:Set(try entries().filter{!$0.dir}.map(\.path)))
             var res: WSRow = ["candidates":found.paths,"fragment":found.fragment,"external":found.external]; if found.paths.count == 1 { res["path"] = found.paths[0] }; return res
+        case "workspaceGraph": return try workspaceGraph(args)
         case "referenceNames":
             let p = try path()
             return Array(Set([wsName(p),wsStem(p),title(p)].map { $0.lowercased() }))

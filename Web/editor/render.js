@@ -285,21 +285,30 @@
     const footnotes={}; masked=masked.replace(/^\[\^([^\]\r\n]+)\]:[ \t]*(.*)$/gm,(whole,key,value)=>{footnotes[key]=value;return whole;});
     const env={footnotes}; const tokens=md.parse(masked,env); context={...env,footnotes};
     if(yaml) blocks.push({type:'yaml',start:0,end:yaml[0].length,source:yaml[0]});
-    let blockMath;
+    let blockMath, listItems, listStartLine;
     function collectMath(token) {
       const display = token.type==='sima_math_block' || (token.type==='fence' && /^math(?:\s|$)/i.test(token.info.trim()));
       if (display || token.type==='sima_math') blockMath.push({tex:token.content,display});
       if (token.children) token.children.forEach(collectMath);
     }
     for(const token of tokens){
-      if (!token.level && token.map && token.nesting>=0) blockMath=[];
+      if (!token.level && token.map && token.nesting>=0) {
+        blockMath=[];
+        listItems=/^(bullet|ordered)_list_open$/.test(token.type) ? [] : null;
+        listStartLine=token.map[0];
+      }
+      if (listItems && token.type==='list_item_open') {
+        listItems.push({line:token.map[0]-listStartLine, until:token.map[1]-listStartLine, level:token.level});
+      }
       if (blockMath) collectMath(token);
       if(token.level || !token.map || token.nesting<0) continue;
       const start=offsets[token.map[0]]; let end=lineEnd(token.map[1]);
       while(end>start && /[\r\n]/.test(source[end-1])) end--;
       if(start===undefined || end<start) continue;
       const raw=source.slice(start,end), type=token.type.replace(/_open$/,'');
-      blocks.push({type,start,end,source:raw,context,formulas:blockMath});
+      const block={type,start,end,source:raw,context,formulas:blockMath};
+      if (listItems) block.listItems=listItems;
+      blocks.push(block);
     }
     // Reference definitions consume lines without producing tokens; retain them as editable blocks.
     const covered=blocks.slice().sort((a,b)=>a.start-b.start); let pos=0;

@@ -175,6 +175,31 @@ import UniformTypeIdentifiers
         try assertThat(restarted.excludedFolders == ["归档/深"],"workspace exclusions survive reopening")
         try assertThat(!rows("files").contains { ($0["path"] as! String).hasPrefix("归档/深/") }, "excluded descendants omitted")
         try assertThat(rows("files").contains { $0["path"] as? String == "归档/最新.md" }, "sibling folder remains visible")
+        let graphSource = "引用/graph.md", graphTarget = "报告/graph-target.md"
+        try add(graphSource,""); try add(graphTarget,"# Graph title")
+        let images = ["plot.PNG","photo.JPEG","chart.svg","animation.webp","scan.tiff","camera.heif","icon.ico"]
+        for image in images { try add("引用/"+image,"") }
+        try add("引用/plot.PNG.md","# A note, despite its file stem")
+        let graphDiary = diaryFolder + "/2010/memory.md"
+        let graphArgs: Row = ["root":vaultPath, "journalFolder":diaryFolder, "links":[
+            ["path":graphSource,"raw":"Graph title","wiki":true], ["path":graphSource,"raw":"../报告/graph-target.md"],
+            ["path":graphSource,"raw":"重复","wiki":true], ["path":graphSource,"raw":"../" + graphDiary],
+            ["path":graphDiary,"raw":"Graph title","wiki":true], ["path":relocate,"raw":"Graph title","wiki":true]]]
+        func graph(_ additions:Row = [:]) throws -> (Set<String>,Set<[String]>) {
+            let result = try call("workspaceGraph",graphArgs.merging(additions){ _,v in v })
+            let nodes = (result["nodes"] as! [Row]).map { $0["path"] as! String }
+            return (Set(nodes),Set((result["edges"] as! [[Int]]).map { edge in edge.map { nodes[$0] } }))
+        }
+        let (visible,edges) = try graph()
+        try assertThat(visible.contains(graphTarget) && !visible.contains(relocate) && !visible.contains(graphDiary) && edges == [[graphSource,graphTarget]],"graph resolves title aliases, deduplicates links, and filters journals, exclusions and ambiguous links")
+        let (all,withDiary) = try graph(["includeJournals":true])
+        let linkedImages = images.map { "![image]("+$0+")" }.joined(separator:"\n")
+        let (withoutImages,imageEdges) = try graph(["buffers":[graphSource:linkedImages]])
+        try assertThat(images.allSatisfy { !withoutImages.contains("引用/"+$0) && !all.contains("引用/"+$0) }
+            && withoutImages.contains("引用/plot.PNG.md") && imageEdges.isEmpty,"graph omits linked and unlinked images, preserves similarly named notes")
+        try assertThat(all.contains(graphDiary) && !all.contains(relocate) && withDiary == [[graphSource,graphTarget],[graphSource,graphDiary],[graphDiary,graphTarget]],"journal toggle includes both edge directions and keeps exclusions")
+        try assertThat(graph(["buffers":[graphSource:"no links"]]).1.isEmpty,"unsaved edits replace indexed links")
+        print("Workspace graph filters, resolution, deduplication and live buffers passed")
         try restarted.open(root)
         try assertThat(restarted.excludedFolders == ["_Meta"],"independent workspace exclusions")
         var observed = false; ws.onChanges = { paths in if paths.contains("事件.md") { observed = true } }; try Data("外部文字".utf8).write(to:vault.appendingPathComponent("事件.md")); let stop = Date(timeIntervalSinceNow:3)

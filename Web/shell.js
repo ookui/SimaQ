@@ -23,6 +23,7 @@
   const atOrUnder = (p, dir) => p === dir || p.startsWith(dir + '/');
   const copy = (o) => o == null ? o : JSON.parse(JSON.stringify(o));
   const paths = {
+    graph: 'M6 6l6 6 6-7 M12 12l6 6 M5.5 3.5a2.5 2.5 0 1 0 .01 0 M12 9a3 3 0 1 0 .01 0 M18 2a2.5 2.5 0 1 0 .01 0 M18 16a2.5 2.5 0 1 0 .01 0',
     folders: 'M3 8V5h6l2 2h8v2 M3 10h6l2 2h10l-2 8H3z',
     folder: 'M3 6h6l2 2h10v11H3z',
     folderOpen: 'M3 17V6h6l2 2h9v2 M3 18l3-7h16l-3 8H3z',
@@ -180,11 +181,14 @@
     if (tab?.editor) tab.state = tab.editor.getState();
     return tab?.state;
   }
+  let graphPage=null, refreshGraph=null;
+  const graphVisible=()=>!!graphPage && !graphPage.panel.hidden;
   function snapshot() {
     rememberState(active);
     captureSideScroll();
     return {
-      path: active?.path || null,
+      path: graphVisible() ? null : active?.path || null,
+      ...(graphVisible() ? {graph:graphPage.view.state()} : {}),
       journalDay: active?.pendingJournal?.date,
       state: copy(active?.state),
       mode,
@@ -222,6 +226,7 @@
         preview: t.preview,
       })),
       active: active?.path || null,
+      graph: graphVisible() ? graphPage.view.state() : null,
       documentViews: [...documentViews],
       expanded: [...expanded],
       selectedPath,
@@ -246,7 +251,7 @@
     await sessionWrite;
   }
   function readerRect() {
-    if (overlayCount || !active || !isReader(active.path)) return { x: 0, y: 0, width: 0, height: 0 };
+    if (graphVisible() || overlayCount || !active || !isReader(active.path)) return { x: 0, y: 0, width: 0, height: 0 };
     const r = $('readerTarget').getBoundingClientRect();
     return { x: r.x, y: r.y, width: r.width, height: r.height };
   }
@@ -261,6 +266,7 @@
     if (!popup) return;
     const old = popup;
     popup = null;
+    old.cleanup?.();
     old.layer.remove();
     overlay(false);
     old.resolve?.(value);
@@ -452,7 +458,7 @@
       el.tabIndex = 0;
       el.draggable = true;
       el.setAttribute('role', 'tab');
-      el.setAttribute('aria-selected', String(t === active));
+      el.setAttribute('aria-selected', String(t === active && !graphVisible()));
       el.title = t.path;
       el.innerHTML = glyph(t.path) + '<span class="tab-name">' + esc(nameOf(t.path)) + '</span>' +
         (t.pinned ? '<span class="pin-mark">' + icon('pin') + '</span>' : '') +
@@ -551,6 +557,7 @@
     renderTabs();
     renderWelcome();
     $('docTools').hidden = !active;
+    $('graphButton').disabled = !root;
     if (active) {
       const parts = active.path.split('/');
       $('breadcrumbs').innerHTML = icon('folder') + '<span>' + esc(nameOf(root)) + '</span>' +
@@ -719,9 +726,10 @@
   let treeResize;
   function renderSide() {
     treeResize?.disconnect();
+    const displayed=graphVisible() ? 'graph' : mode;
     document.querySelectorAll('[data-mode]').forEach((b) => {
-      b.classList.toggle('active', b.dataset.mode === mode);
-      b.setAttribute('aria-pressed', String(b.dataset.mode === mode));
+      b.classList.toggle('active', b.dataset.mode === displayed);
+      b.setAttribute('aria-pressed', String(b.dataset.mode === displayed));
     });
     const box = $('sideContent');
     const journalScroll = box.querySelector('.journal-list')?.scrollTop || 0;
@@ -879,9 +887,10 @@
     treeResize.observe(sc);
   }
   function activateSide(m, remember = true) {
-    if (m !== mode) {
+    if (m !== mode || graphVisible()) {
       if (remember) pushHistory();
       captureSideScroll();
+      hideGraph();
       mode = m;
       renderSide();
     }
@@ -1089,7 +1098,7 @@
       return;
     }
     for (const g of groups) {
-      const folded = search.collapsed.includes(g.path), head = document.createElement('button');
+      const folded = search.collapsed.includes(g.path), head = document.createElement('div');
       const group = document.createElement('section');
       group.className = 'search-file-group';
       group.setAttribute('aria-label', g.path + '，' + g.count + ' 处匹配');
@@ -1098,16 +1107,18 @@
       head.title = g.path;
       head.oncontextmenu = e => {
         e.preventDefault();
-        menu(e,[['在新标签页中打开', () => openPath(g.path,{newTab:true,permanent:true}), 'doc'], trashMenuItem(g.path)]);
+        menu(e,[['在新标签页中打开', () => openSearchFile(g,true), 'doc'], trashMenuItem(g.path)]);
       };
-      head.setAttribute('aria-expanded', String(!folded));
-      head.innerHTML = '<span class="expander">' + icon(folded ? 'right' : 'chevronDown') + '</span>' +
+      const tr = window.SimaSettings.menuText;
+      head.innerHTML = '<button class="expander" aria-expanded="' + !folded + '" aria-label="' +
+        esc(tr(folded ? '展开搜索结果' : '折叠搜索结果') + ' · ' + g.path) + '">' +
+        icon(folded ? 'right' : 'chevronDown') + '</button><button class="group-open">' +
         '<span class="group-info"><span class="group-title"><span class="basename">' +
         esc(stem(g.path)) + '</span><small class="file-ext">.' + esc(extOf(g.path)) +
         '</small></span><small class="group-path">' + esc((parentOf(g.path) || nameOf(root)) + '/') +
-        '</small></span><span class="group-count">' + g.count + '</span>';
-      head.onclick = e => {
-        if (e.metaKey) return call(() => openPath(g.path,{newTab:true,permanent:true}));
+        '</small></span><span class="group-count">' + g.count + '</span></button>';
+      head.querySelector('.group-open').onclick = e => call(() => openSearchFile(g,e.metaKey));
+      head.querySelector('.expander').onclick = () => {
         captureSideScroll();
         search.collapsed = folded
           ? search.collapsed.filter((p) => p !== g.path)
@@ -1199,6 +1210,17 @@
     if (immediate) call(perform);
     else searchTimer = setTimeout(() => call(perform), 20);
   }
+  function openSearchFile(group, newTab) {
+    return serialize(async () => {
+      pushHistory();
+      captureSideScroll();
+      search.selected = search.current = null;
+      await doOpen(group.path, { newTab, permanent:newTab, preview:!newTab, history:false, beginning:true,
+        ranges:group.hits.filter(hit => !['name','filename','path'].includes(hit.kind)) });
+      drawResults();
+      persistSoon();
+    });
+  }
   async function followHit(g, i, permanent = false) {
     const h = g?.hits?.[i];
     if (!h) return;
@@ -1239,10 +1261,11 @@
   function openSearch(scope) {
     if (!root) return chooseWorkspace('chooseRoot');
     if (scope === 'document' && !active) return;
-    const changed = mode !== 'search' || scope !== search.scope ||
+    const changed = graphVisible() || mode !== 'search' || scope !== search.scope ||
       scope === 'document' && active?.path !== search.document;
     if (changed) pushHistory();
     captureSideScroll();
+    hideGraph();
     search.scope = scope;
     search.document = scope === 'document' ? active?.path : null;
     mode = 'search';
@@ -1576,6 +1599,10 @@
   }
   const readerAction = (action, payload = {}) => rpc('readerAction', { action, payload });
   async function locate(t, opts) {
+    if (opts.beginning) {
+      if (t.editor) t.editor.goToBeginning(opts.ranges);
+      else await readerAction('beginning');
+    }
     if (opts.fragment) {
       const frag = opts.fragment.replace(/^#/, '');
       if (t.editor) {
@@ -1615,9 +1642,10 @@
       toast('此格式可在 Finder 中打开。');
       return;
     }
-    if (opts.history !== false && (active?.path !== path || opts.hit || opts.fragment || opts.line)) {
+    if (opts.history !== false && (graphVisible() || active?.path !== path || opts.hit || opts.fragment || opts.line)) {
       pushHistory();
     }
+    const leaveGraph=graphVisible();
     let t = tabs.find((t) => t.path === path), fresh = !t;
     const replaced = fresh && opts.newTab === false && !active?.pinned ? active : null;
     if (!t) t = tabRecord(path, opts);
@@ -1635,6 +1663,7 @@
       } else if (replaced) tabs.splice(tabs.indexOf(replaced) + 1, 0, t);
       else tabs.push(t);
     } else if (opts.preview !== true && opts.permanent) t.preview = false;
+    if (leaveGraph) hideGraph();
     await activate(t);
     if (opts.state && t.editor) t.editor.setState(opts.state);
     await locate(t, opts);
@@ -1666,6 +1695,12 @@
       search = Object.assign(defaultSearch(), entry.search);
       selectedPath = entry.selectedPath || '';
       treeScroll = entry.treeScroll || 0;
+      if (entry.graph) {
+        await showGraph(entry.graph,false);
+        renderSide();
+        return;
+      }
+      hideGraph();
       if (entry.path) {
         const journal = entry.journalDay && journalFolder() != null
           ? await rpc('openJournal',{folder:journalFolder(),root,day:entry.journalDay}) : null;
@@ -1900,6 +1935,7 @@
     clearTimeout(externalTimer);
     clearTimeout(treeRefreshTimer);
     pendingExternal.clear();
+    discardGraph();
     dismissPopup();
     await releaseReader();
     active = null;
@@ -1948,6 +1984,7 @@
       renderFrame();
       renderSide();
       if (root && mode === 'search') scheduleSearch(true);
+      if (root && s.graph) await showGraph(s.graph,false);
       if (root) await recoveryDialog();
     } finally {
       restoring = false;
@@ -2355,6 +2392,75 @@
       ['关闭标签', () => serialize(() => closeTab(t)), 'close', '⌘W'],
     ]);
   }
+  function hideGraph() {
+    if (!graphVisible()) return;
+    graphPage.view.pause(true);
+    graphPage.panel.hidden=true;
+    document.body.classList.remove('graph-open');
+    reposition(); renderSide(); renderFrame();
+  }
+  function discardGraph() {
+    if (!graphPage) return;
+    graphPage.view.destroy(); graphPage.panel.remove();
+    graphPage=null; refreshGraph=null; document.body.classList.remove('graph-open');
+  }
+  function createGraphPage() {
+    const tr=window.SimaSettings.menuText;
+    const panel=document.createElement('section');
+    panel.className='sq-dialog workspace-graph';
+    panel.setAttribute('aria-label',tr('知识库关系图'));
+    panel.hidden=true;
+    panel.innerHTML='<header class="graph-head">'+icon('graph')+'<h2>'+esc(tr('知识库关系图'))+'</h2>'+
+      '<span class="graph-counts" role="status"></span>'+iconButton('关闭','close','data-dismiss')+'</header>'+
+      '<div class="graph-stage"><canvas aria-label="'+esc(tr('知识库关系图'))+'"></canvas>'+
+      '<div class="graph-message" role="status">'+esc(tr('正在读取链接…'))+'</div>'+
+      '<div class="graph-tip" hidden><strong></strong><small></small></div></div>'+
+      '<footer><span>'+esc(tr('拖动节点调整布局 · 拖动空白处平移 · 滚轮缩放'))+'</span><div class="graph-controls">'+
+      '<button data-zoom="out" aria-label="'+esc(tr('缩小图谱'))+'">−</button><output class="graph-scale">100%</output>'+
+      '<button data-zoom="in" aria-label="'+esc(tr('放大图谱'))+'">+</button>'+
+      '<button data-zoom="fit">'+esc(tr('适合窗口'))+'</button></div></footer>';
+    $('stage').append(panel);
+    const view=window.SimaGraph.mount(panel,{tr,colorFor:path=>directoryStyleByName.get(path.split('/')[0])?.color,
+      open:path=>call(()=>openPath(path,{newTab:false,beginning:true}))});
+    const close=panel.querySelector('[data-dismiss]');
+    close.onclick=()=>call(closeGraph);
+    let serial=0, invalid=true, lastInputs='';
+    refreshGraph=async (invalidate=true) => {
+      invalid ||= invalidate;
+      if (!graphVisible()) return;
+      const request={root,journalFolder:journalFolder(),includeJournals:!!settings().graphJournals,
+        buffers:Object.fromEntries(tabs.filter(t=>t.dirty && t.editor && isMd(t.path)).map(t=>[t.path,t.editor.getText()]))};
+      const inputs=JSON.stringify(request);
+      if (!invalid && inputs===lastInputs) return;
+      const ticket=++serial;
+      try {
+        const data=await rpc('workspaceGraph',request);
+        if (ticket===serial && graphPage?.view===view) {
+          view.update(data); invalid=false; lastInputs=inputs;
+        }
+      } catch(e) { if(ticket===serial && graphPage?.view===view) view.error(e.message); }
+    };
+    return {panel,view};
+  }
+  async function showGraph(state=null,remember=true) {
+    if (!root) return;
+    if (!graphVisible() && remember) pushHistory();
+    graphPage ??= createGraphPage();
+    const page=graphPage;
+    page.panel.hidden=false;
+    document.body.classList.add('graph-open');
+    page.view.pause(false); reposition(); renderFrame(); renderSide();
+    page.panel.querySelector('[data-dismiss]').focus({preventScroll:true});
+    await refreshGraph(false);
+    if (graphPage===page && graphVisible()) page.view.restore(state);
+    persistSoon();
+  }
+  function closeGraph() {
+    return serialize(async()=>{
+      if (previous.length) await travel(false);
+      else { hideGraph(); persistSoon(); }
+    });
+  }
   function execute(id, arg) {
     if (window.SimaSettings?.commands?.some((c) => c.id === id)) {
       return window.SimaSettings.execute(id, arg);
@@ -2363,6 +2469,8 @@
   }
   async function run(id, arg) {
     const t = active;
+    if (id === 'view.graph') return serialize(()=>showGraph());
+    if (id === 'file.closeTab' && graphVisible()) return closeGraph();
     if (id === 'file.openFolder') return chooseWorkspace('chooseRoot');
     if (id === 'file.journalFolder') return chooseJournalFolder();
     if (id === 'file.sample') return chooseWorkspace('sampleRoot');
@@ -2501,6 +2609,7 @@
     if (name === 'systemLanguageChanged') return window.SimaSettings?.refreshMenuLanguage();
     if (name === 'themesChanged') return window.SimaSettings?.reloadThemes();
     if (name === 'indexReady' || name === 'referencesChanged') {
+      refreshGraph?.();
       for (const t of tabs) t.refreshReferences?.();
       if (mode === 'search' && search.q) scheduleSearch();
     }
@@ -2552,6 +2661,7 @@
       return;
     }
     if (document.querySelector('.sq-backdrop')) return;
+    if (e.key==='Escape' && graphVisible()) { e.preventDefault(); call(closeGraph); return; }
     if (e.key === 'Escape' && mode === 'search') {
       e.preventDefault();
       activateSide('tree');
@@ -2680,18 +2790,21 @@
     await window.SimaSettings?.init({
       rpc,
       run,
-      editor: () => active?.editor,
+      editor: () => graphVisible() ? null : active?.editor,
       context: () => ({
-        path: active?.path || '',
+        graph: graphVisible(),
+        path: graphVisible() ? '' : active?.path || '',
         root,
-        hasEditor: !!active?.editor,
-        markdown: !!active && isMd(active.path),
+        hasEditor: !graphVisible() && !!active?.editor,
+        markdown: !graphVisible() && !!active && isMd(active.path),
         canBack: !!previous.length,
         canForward: !!next.length,
         canReopen: !!closed.length,
       }),
+      refreshGraph: () => refreshGraph?.(),
       refreshExclusions: async () => {
         await refreshTree();
+        await refreshGraph?.();
         if (mode === 'search') { groups = []; scheduleSearch(true); }
       },
       refreshImages: () => tabs.forEach(t => t.editor?.refreshImages()),

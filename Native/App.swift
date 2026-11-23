@@ -258,6 +258,19 @@ final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigatio
             search.setExcludedFolders(Array(paths))
             search.whenReady { [weak self] in self?.send("indexReady",[:]) }
             done(paths.sorted())
+        case "workspaceGraph":
+            let expected = args["root"] as? String ?? ""
+            search.whenReady { [self] in
+                search.graphLinks(root:expected) { result in
+                    self.io.async {
+                        do {
+                            var request = args
+                            request["links"] = try result.get()
+                            reply(.success(try self.workspace.call("workspaceGraph",request)))
+                        } catch { reply(.failure(error)) }
+                    }
+                }
+            }
         case "pageReferences":
             guard let expected = args["root"] as? String, workspace.root?.path == expected else { done(["pageCount":0,"rows":[] as [JSONObject]]); return }
             io.async { [self] in
